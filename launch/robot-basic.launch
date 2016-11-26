@@ -1,0 +1,8 @@
+<launch>
+  <include file="$(find ca_driver)/launch/create_2.launch" />
+  <include file="$(find realsense_camera)/launch/r200_nodelet_rgbd.launch" />
+  <node name="odom2camera" pkg="tf" type="static_transform_publisher" args="0 0 0 0 0 0 odom camera_link 100" />
+  <node name="cloud2scan" pkg="depthimage_to_laserscan" type="depthimage_to_laserscan">
+    <remap from="image" to="camera/depth/image_raw" />
+  </node>
+</launch>
