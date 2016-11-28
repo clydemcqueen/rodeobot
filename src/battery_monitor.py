@@ -4,37 +4,40 @@ import rospy
 from std_msgs.msg import Float32, UInt8MultiArray
 
 g_set_ascii_pub = None
-g_voltage = None
-g_charge_ratio = None
+g_voltage = '00'
+g_charge_ratio = '00'
 
 # Voltage updated.
 def battery_voltage_callback(msg):
-  g_voltage = msg.data
+  global g_voltage
+  voltage = float_to_string(msg.data)
+  if voltage != g_voltage:
+    g_voltage = voltage
+    update_display()
 
-# Charge ratio updated. Update the display.
+# Charge ratio updated.
 def battery_charge_ratio_callback(msg):
-  g_charge_ratio = msg.data
-  update_display()
+  global g_charge_ratio
+  charge_ratio = float_to_string(msg.data * 100)
+  if charge_ratio != g_charge_ratio:
+    g_charge_ratio = charge_ratio
+    update_display()
 
-# Convert 2 digit float into a pair of ints.
-def float_to_decimal(f):
+# Convert 2 digit float into a string.
+def float_to_string(f):
   if f < 0.0:
-    return (0, 0)
+    return '00'
   elif f > 99.9:
-    return (9, 9)
-  else
+    return '99'
+  else:
     tens = int(f / 10)
-    return (tens, int(f - tens * 10))
+    return str(tens) + (str(int(f - tens * 10)))
 
 # Update the display. 2 digits for voltage, 2 for charge ratio.
 def update_display():
+  print 'updating display: {} {}'.format(g_voltage, g_charge_ratio)
   display = UInt8MultiArray()
-  vd = float_to_decimal(g_voltage)
-  cd = float_to_decimal(g_charge_ratio)
-  display.data[0] = vd[0] + 48
-  display.data[1] = vd[1] + 48
-  display.data[2] = cd[0] + 48
-  display.data[3] = cd[1] + 48
+  display.data = g_voltage + g_charge_ratio
   g_set_ascii_pub.publish(display)
 
 if __name__ == '__main__':
