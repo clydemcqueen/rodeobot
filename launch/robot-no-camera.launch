@@ -1,0 +1,6 @@
+<launch>
+
+  <!-- Launch Create2 base nodes; this also provides an URDF file -->
+  <include file="$(find ca_driver)/launch/create_2.launch" />
+
+</launch>
