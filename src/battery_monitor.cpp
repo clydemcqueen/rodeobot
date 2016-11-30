@@ -8,6 +8,8 @@ private:
   int voltage_;
   int charge_ratio_;
   ros::Publisher set_ascii_pub_;
+  ros::Subscriber voltage_sub_;
+  ros::Subscriber charge_ratio_sub_;
 
   void voltageCallback(const std_msgs::Float32ConstPtr& msg);
   void chargeRatioCallback(const std_msgs::Float32ConstPtr& msg);
@@ -15,6 +17,7 @@ private:
 
 public:
   BatteryMonitor(ros::NodeHandle& nh);
+  ~BatteryMonitor() {}; // This will suppress the default copy and constructors
 };
 
 // Trim a float to a number between 0 and 99.
@@ -32,8 +35,9 @@ BatteryMonitor::BatteryMonitor(ros::NodeHandle& nh) : voltage_(0), charge_ratio_
 {
   set_ascii_pub_ = nh.advertise<std_msgs::UInt8MultiArray>("set_ascii", 1);
 
-  nh.subscribe("battery/voltage", 1, &BatteryMonitor::voltageCallback, this);
-  nh.subscribe("battery/charge_ratio", 1, &BatteryMonitor::chargeRatioCallback, this);
+  // Subscriptions stop when Subscriber objects go out of scope -- so save them.
+  voltage_sub_ = nh.subscribe("battery/voltage", 1, &BatteryMonitor::voltageCallback, this);
+  charge_ratio_sub_ = nh.subscribe("battery/charge_ratio", 1, &BatteryMonitor::chargeRatioCallback, this);
 }
 
 // Handle voltage message.
