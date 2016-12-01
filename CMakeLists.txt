@@ -10,7 +10,11 @@ catkin_package()
 ## Require C++11
 add_definitions(-std=c++11)
 
-## Build our node
+## Build our nodes
 include_directories(include ${catkin_INCLUDE_DIRS})
+
 add_executable(battery_monitor src/battery_monitor.cpp)
 target_link_libraries(battery_monitor ${catkin_LIBRARIES})
+
+add_executable(simple_drive src/simple_drive.cpp)
+target_link_libraries(simple_drive ${catkin_LIBRARIES})
