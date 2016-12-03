@@ -46,7 +46,7 @@ BatteryMonitor::BatteryMonitor(ros::NodeHandle& nh) : voltage_(0), charge_ratio_
 // Handle voltage message. Range should be something like [0.0, ~16.0].
 void BatteryMonitor::voltageCallback(const std_msgs::Float32ConstPtr& msg)
 {
-  const int new_voltage = trimFloat(msg->data);
+  auto new_voltage = trimFloat(msg->data);
   if (new_voltage != voltage_)
   {
     voltage_ = new_voltage;
@@ -57,7 +57,7 @@ void BatteryMonitor::voltageCallback(const std_msgs::Float32ConstPtr& msg)
 // Handle charge ratio message. Range should be something like [0.0, 1.0].
 void BatteryMonitor::chargeRatioCallback(const std_msgs::Float32ConstPtr& msg)
 {
-  const int new_charge_ratio = trimFloat(msg->data * 100);
+  auto new_charge_ratio = trimFloat(msg->data * 100);
   if (new_charge_ratio != charge_ratio_)
   {
     charge_ratio_ = new_charge_ratio;

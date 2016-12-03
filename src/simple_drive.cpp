@@ -60,8 +60,8 @@ void SimpleDrive::odomCallback(const nav_msgs::OdometryConstPtr& msg)
 // Publish a new velocity.
 void SimpleDrive::publishCmdVel()
 {
-  ros::Time now {ros::Time::now()};
-  double v0 {last_twist_.linear.x};
+  auto now {ros::Time::now()};
+  auto v0 {last_twist_.linear.x};
 
   geometry_msgs::Twist msg; // TODO does this default / init to 0?
 
@@ -75,8 +75,8 @@ void SimpleDrive::publishCmdVel()
   else
   {
     // Compute the stopping distance at our current velocity.
-    double stopping_time {v0/accel_};
-    double stopping_distance = v0 * stopping_time + 0.5 * accel_ * stopping_time * stopping_time;
+    auto stopping_time {v0/accel_};
+    auto stopping_distance = v0 * stopping_time + 0.5 * accel_ * stopping_time * stopping_time;
 
     // Compute the target velocity.
     if (target_distance_ - current_distance_ < stopping_distance)

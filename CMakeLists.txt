@@ -7,8 +7,8 @@ find_package(catkin REQUIRED COMPONENTS roscpp rospy std_msgs)
 ## Declare a catkin package
 catkin_package()
 
-## Require C++11
-add_definitions(-std=c++11)
+## Require C++14
+add_definitions(-std=c++14)
 
 ## Build our nodes
 include_directories(include ${catkin_INCLUDE_DIRS})
