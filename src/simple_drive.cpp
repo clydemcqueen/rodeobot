@@ -12,7 +12,7 @@ class SimpleDrive
 private:
   const float cruising_ {0.4};          // Cruising velocity (max from libcreate)
   const float accel_ {0.1};             // Acceleration
-  const float epsilon_ {0.02};          // Target error
+  const float epsilon_ {0.005};         // Target error
 
   float target_distance_;               // How far we want to go
   float current_distance_;              // How far we've gone so far
