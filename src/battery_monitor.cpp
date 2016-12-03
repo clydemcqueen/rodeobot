@@ -1,3 +1,4 @@
+#include <iostream>
 #include <ros/ros.h>
 #include <std_msgs/Float32.h>
 #include <std_msgs/UInt8MultiArray.h>
@@ -33,6 +34,8 @@ int trimFloat(float f)
 // Constructor.
 BatteryMonitor::BatteryMonitor(ros::NodeHandle& nh) : voltage_(0), charge_ratio_(0)
 {
+  std::cout << "Rodeobot awake!" << std::endl;
+
   set_ascii_pub_ = nh.advertise<std_msgs::UInt8MultiArray>("set_ascii", 1);
 
   // Subscriptions stop when Subscriber objects go out of scope -- so save them.
@@ -40,7 +43,7 @@ BatteryMonitor::BatteryMonitor(ros::NodeHandle& nh) : voltage_(0), charge_ratio_
   charge_ratio_sub_ = nh.subscribe("battery/charge_ratio", 1, &BatteryMonitor::chargeRatioCallback, this);
 }
 
-// Handle voltage message.
+// Handle voltage message. Range should be something like [0.0, ~16.0].
 void BatteryMonitor::voltageCallback(const std_msgs::Float32ConstPtr& msg)
 {
   auto new_voltage = trimFloat(msg->data);
@@ -51,10 +54,10 @@ void BatteryMonitor::voltageCallback(const std_msgs::Float32ConstPtr& msg)
   }
 }
 
-// Handle charge ratio message.
+// Handle charge ratio message. Range should be something like [0.0, 1.0].
 void BatteryMonitor::chargeRatioCallback(const std_msgs::Float32ConstPtr& msg)
 {
-  auto new_charge_ratio = trimFloat(msg->data);
+  auto new_charge_ratio = trimFloat(msg->data * 100);
   if (new_charge_ratio != charge_ratio_)
   {
     charge_ratio_ = new_charge_ratio;
@@ -65,15 +68,15 @@ void BatteryMonitor::chargeRatioCallback(const std_msgs::Float32ConstPtr& msg)
 // Update the display: 2 digits for voltage, 2 digits for charge ratio.
 void BatteryMonitor::updateDisplay()
 {
-  ROS_INFO_STREAM("voltage=" << voltage_ << " charge=" << charge_ratio_);
+  std::cout << "voltage=" << voltage_ << " charge=" << charge_ratio_ << std::endl;
 
   std_msgs::UInt8MultiArray msg;
   msg.data.clear();
 
-  msg.data.push_back(voltage_ / 10);
-  msg.data.push_back(voltage_ % 10);
-  msg.data.push_back(charge_ratio_ / 10);
-  msg.data.push_back(charge_ratio_ % 10);
+  msg.data.push_back(voltage_ / 10 + 48);
+  msg.data.push_back(voltage_ % 10 + 48);
+  msg.data.push_back(charge_ratio_ / 10 + 48);
+  msg.data.push_back(charge_ratio_ % 10 + 48);
 
   set_ascii_pub_.publish(msg);
 }
