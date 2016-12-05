@@ -11,10 +11,13 @@ catkin_package()
 add_definitions(-std=c++14)
 
 ## Build our nodes
-include_directories(include ${catkin_INCLUDE_DIRS})
+include_directories(include ${catkin_INCLUDE_DIRS} ~/catkin_ws/devel_isolated/ca_msgs/include)
 
 add_executable(battery_monitor src/battery_monitor.cpp)
 target_link_libraries(battery_monitor ${catkin_LIBRARIES})
 
 add_executable(simple_drive src/simple_drive.cpp)
 target_link_libraries(simple_drive ${catkin_LIBRARIES})
+
+add_executable(wander src/wander.cpp)
+target_link_libraries(wander ${catkin_LIBRARIES})
