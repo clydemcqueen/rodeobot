@@ -19,5 +19,12 @@ target_link_libraries(battery_monitor ${catkin_LIBRARIES})
 add_executable(simple_drive src/simple_drive.cpp)
 target_link_libraries(simple_drive ${catkin_LIBRARIES})
 
-add_executable(wander src/wander.cpp)
+add_library(wander src/wander.cpp)
 target_link_libraries(wander ${catkin_LIBRARIES})
+
+add_executable(wander_node src/wander_node.cpp)
+target_link_libraries(wander_node wander ${catkin_LIBRARIES})
+
+## Build tests; note that we split wander into a library & node because we have tests
+catkin_add_gtest(wander_test test/wander_test.cpp)
+target_link_libraries(wander_test wander ${catkin_LIBRARIES})

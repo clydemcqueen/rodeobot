@@ -1,137 +1,6 @@
-#include <iostream>
-#include <cmath>
-#include <limits>
-
-#include <ros/ros.h>
+#include <rodeobot/wander.h>
 #include <angles/angles.h>
-#include <geometry_msgs/Twist.h>
-#include <nav_msgs/Odometry.h>
-#include <std_msgs/Empty.h>
 #include <tf/transform_datatypes.h>
-
-#include "ca_msgs/Bumper.h"
-
-// We can be in these states while wandering:
-enum class State
-{
-  start,          // We're just starting out.
-  look_accel,     // We're starting to look around, and we're accelerating.
-  look,           // We're looking around.
-  spin,           // We know where we're headed, and we're getting into position.
-  spin_decel,     // We're almost in position.
-  drive_accel,    // We're accelerating.
-  drive,          // We're cruising.
-  drive_decel,    // We're decelerating. Next=look_accel.
-  emergency_stop  // We've stopped completely, and we're done.
-};
-
-// Helper for debugging. I'm sure there's some C++14 magic that I'm not grokking yet.
-const char *toString(State state)
-{
-  switch (state)
-  {
-    case State::start: 
-      return "start";
-    case State::look_accel: 
-      return "look_accel";
-    case State::look: 
-      return "look";
-    case State::spin: 
-      return "spin";
-    case State::spin_decel: 
-      return "spin_decel";
-    case State::drive_accel: 
-      return "drive_accel";
-    case State::drive: 
-      return "drive";
-    case State::drive_decel: 
-      return "drive_decel";
-    case State::emergency_stop: 
-      return "emergency_stop";
-    // Omit default case to trigger compiler warning for missing cases.
-  };
-  return "missing";
-}
-
-// While we're looking we build a local map of directions. We have 1 bucket per degree.
-class Bucket
-{
-private:
-
-  double value;   // Cumulative value from the light sensor(s).
-  double seconds; // How many seconds we were looking in this direction.
-
-public:
-
-  Bucket(): value {0.0}, seconds {0.0} {}
-  void update(double v, double s) { value += v; seconds += s; }
-  bool isEmpty() { return value == 0.0 && seconds == 0.0; }
-  double normalized() { return seconds == 0.0 ? 0.0 : value / seconds; }
-};
-
-// The main class.
-class Wander
-{
-private:
-
-  static constexpr double linear_max_ {0.4};     // Cruising velocity
-  static constexpr double linear_accel_ {0.1};   // Linear acceleration
-  static constexpr double angular_max_ {0.2};    // Spinning velocity
-  static constexpr double angular_accel_ {0.1};  // Angular acceleration
-
-  // Time for a 360 spin, plus a bit more.
-  static constexpr double look_time_ {2 * M_PI / angular_max_ + angular_max_ / angular_accel_};
-
-  // How our light bumper behaves.
-  static constexpr int light_bumper_center_ {355};
-  static constexpr int light_bumper_range_ {10};
-
-  // TODO can we use the timestamp in the header instead of a separate time?
-  nav_msgs::Odometry last_odom_;
-  ros::Time last_odom_time_;
-
-  // TODO can we use the timestamp in the header instead of a separate time?
-  ca_msgs::Bumper last_bumper_;
-  ros::Time last_bumper_time_;
-
-  // Last twist message we sent.
-  geometry_msgs::Twist last_twist_;
-  ros::Time last_twist_time_;
-
-  State state_ {State::start};
-  void transition(State state);
-
-  // If we're looking:
-  std::vector<Bucket> map_ {std::vector<Bucket>(360)};
-  ros::Time start_looking_;               // When we started looking
-  double start_yaw_;                      // Our yaw when we started looking
-  double best_yaw_;                       // Best direction we found
-
-  ros::Publisher cmd_vel_pub_;
-  ros::Subscriber odom_sub_;
-  ros::Subscriber bumper_sub_;
-  ros::Subscriber wheeldrop_sub_;
-
-  void odomCallback(const nav_msgs::OdometryConstPtr& msg);
-  void bumperCallback(const ca_msgs::BumperConstPtr& msg);
-  void wheeldropCallback(const std_msgs::EmptyConstPtr& msg);
-
-public:
-
-  Wander(ros::NodeHandle& nh);
-  ~Wander() {}; // Suppress copy and move constructors
-  void tick();
-};
-
-// Constructor.
-Wander::Wander(ros::NodeHandle& nh)
-{
-  cmd_vel_pub_ = nh.advertise<geometry_msgs::Twist>("cmd_vel", 1);
-
-  odom_sub_ = nh.subscribe("odom", 1, &Wander::odomCallback, this);
-  bumper_sub_ = nh.subscribe("bumper", 1, &Wander::bumperCallback, this);
-  wheeldrop_sub_ = nh.subscribe("wheeldrop", 1, &Wander::wheeldropCallback, this);
-}
 
 // Helper: compute yaw from a quaternion message.
 double getYaw(const geometry_msgs::Quaternion msg)
@@ -143,7 +12,163 @@ double getYaw(const geometry_msgs::Quaternion msg)
   return yaw;
 }
 
+// Helper: compute velocity.
+double computeVelocity(bool accelerate, double v0, double a, double max_v)
+{
+  if (accelerate)
+  {
+    // Accelerate
+    if (v0 + a > max_v)
+      return max_v;
+    else
+      return v0 + a;
+  }
+  else
+  {
+    // Decelerate
+    if (v0 - a < 0.0)
+      return 0.0;
+    else
+      return v0 - a;
+  }
+}
+
+// Initialize our scan map.
+void Scan::init()
+{
+  std::fill(map_.begin(), map_.end(), 0.0);
+}
+
+// Put a value in our scan map.
+void Scan::putValue(double yaw, double signal)
+{
+  auto degrees = static_cast<int>(angles::to_degrees(angles::normalize_angle_positive(yaw)));
+
+  if (signal > map_[degrees])
+    map_[degrees] = signal;
+}
+
+// Determine the best angle -- the angle with the lowest non-0 value.
+double Scan::getBestAngle()
+{
+  int low_index{ 0 };
+  auto low_value = std::numeric_limits<double>::max();
+
+  for (int i = 0; i < map_.size(); ++i)
+  {
+    if (map_[i] > 0.0 && map_[i] < low_value)
+    {
+      low_index = i;
+      low_value = map_[i];
+    }
+  }
+
+  return angles::from_degrees(static_cast<double>(low_index));
+}
+
+const double DriveModel::max_v_{ 0.4 };
+const double DriveModel::accel_{ 0.1 };
+
+// Compute the desired linear velocity. Return 0 if we're at our goal.
+double DriveModel::computeLinearX(double v0, double dt)
+{
+  return computeVelocity(driving_, v0, accel_ * dt, max_v_);
+}
+
+const double RotateModel::max_v_{ 0.2 };
+const double RotateModel::accel_{ 0.1 };
+const double RotateModel::epsilon_{ 2 * M_PI / 360 };
+
+// Rotate to a particular angle.
+void RotateModel::initGoalAngle(double current_yaw, double goal_yaw)
+{
+  goal_yaw_ = goal_yaw;
+  full_circle_ = false;
+  clockwise_ = angles::shortest_angular_distance(current_yaw, goal_yaw) > 0;
+  suppress_goal_check_ = false;
+}
+
+// Rotate in place one full circle and end up in the same pose.
+void RotateModel::initFullCircle(double current_yaw)
+{
+  goal_yaw_ = current_yaw;
+  full_circle_ = true;
+  clockwise_ = true;
+  suppress_goal_check_ = true;
+}
+
+
+// Compute the angular velocity we want. Return 0 if we're at our goal.
+double RotateModel::computeAngularZ(double current_yaw, double v0, double dt)
+{
+  auto error = std::abs(angles::shortest_angular_distance(current_yaw, goal_yaw_));
+
+  // Have we reached our goal?
+  if (!suppress_goal_check_ && error < epsilon_)
+    return 0;
+
+  // Can we stop suppressing the goal check?
+  if (full_circle_ && suppress_goal_check_ && error > epsilon_)
+    suppress_goal_check_ = false;
+
+  // Compute the time it would take to stop at our current velocity.
+  auto stopping_time = v0 / accel_;
+
+  // Compute the stopping angle (think: stopping distance) at our current
+  // velocity.
+  auto stopping_yaw = v0 * stopping_time + 0.5 * accel_ * stopping_time * stopping_time;
+
+  // Compute the desired angular velocity.
+  auto a = accel_ * dt;
+  if (clockwise_)
+  {
+    // Protect against wraparound.
+    auto adj_goal = current_yaw > goal_yaw_ ? goal_yaw_ + 2 * M_PI : goal_yaw_;
+
+    return computeVelocity(current_yaw < adj_goal - stopping_yaw, v0, a, max_v_);
+  }
+  else  // Counterclockwise
+  {
+    // Protect against wraparound.
+    auto adj_curr = current_yaw < goal_yaw_ ? current_yaw + 2 * M_PI : current_yaw;
+
+    return -computeVelocity(adj_curr > goal_yaw_ + stopping_yaw, -v0, a, max_v_);
+  }
+}
+
+// Helper for debugging.
+const char *toString(State state)
+{
+  switch (state)
+  {
+    case State::start:
+      return "start";
+    case State::look:
+      return "look";
+    case State::spin:
+      return "spin";
+    case State::drive:
+      return "drive";
+    case State::emergency_stop:
+      return "emergency_stop";
+      // Omit default case to trigger compiler warning for missing cases.
+  };
+  return "missing";
+}
+
+// Constructor.
+Wander::Wander(ros::NodeHandle &nh)
+{
+  cmd_vel_pub_ = nh.advertise<geometry_msgs::Twist>("cmd_vel", 1);
+
+  odom_sub_ = nh.subscribe("odom", 1, &Wander::odomCallback, this);
+  bumper_sub_ = nh.subscribe("bumper", 1, &Wander::bumperCallback, this);
+  wheeldrop_sub_ = nh.subscribe("wheeldrop", 1, &Wander::wheeldropCallback, this);
+}
+
 // Transition to a new state.
+// TODO consolidate state transition logic; currently split between spinOnce()
+// and here
 void Wander::transition(State state)
 {
   ROS_INFO("[WANDER] Transition from %s to %s", toString(state_), toString(state));
@@ -152,17 +177,16 @@ void Wander::transition(State state)
   // Initialize the new state.
   switch (state)
   {
-    case State::look_accel:
-      // Note the current yaw and time.
-      start_yaw_ = getYaw(last_odom_.pose.pose.orientation);
-      start_looking_ = last_odom_time_;
+    case State::look:
+      // Note the current yaw.
+      start_yaw_ = last_yaw_;
 
       // Reset our local map.
-      std::fill(map_.begin(), map_.end(), Bucket());
+      scan_.init();
       break;
-      
+
     case State::emergency_stop:
-      // Don't wait for the next tick -- publish a "dead stop" msg now.
+      // Don't wait for the next spinOnce -- publish a "dead stop" msg now.
       geometry_msgs::Twist msg;
       cmd_vel_pub_.publish(msg);
       break;
@@ -170,120 +194,47 @@ void Wander::transition(State state)
 }
 
 // We're called at 10Hz. Publish a new velocity.
-void Wander::tick()
+void Wander::spinOnce()
 {
+  // TODO do we need these auto vars?
   auto now = ros::Time::now();
   auto dt = (now - last_twist_time_).toSec();
-  auto v0 = last_twist_.linear.x;
-  auto a0 = last_twist_.angular.z;
+  auto v0 = last_twist_.linear.x;   // TODO only makes sense if we're driving
+  auto a0 = last_twist_.angular.z;  // TODO only makes sense if we're looking or spinning
   auto next_state = state_;
-  geometry_msgs::Twist msg; // Init to 0, 0, 0, 0, 0, 0
+  geometry_msgs::Twist msg;  // Init to 0, 0, 0, 0, 0, 0
 
   switch (state_)
   {
     case State::start:
-      // Wait for messages to start arriving.
       if (last_odom_.header.seq > 0 && last_bumper_.header.seq > 0)
-        next_state = State::look_accel;
-      break;
-
-    case State::look_accel:
-      msg.angular.z = a0 + angular_accel_ * dt;
-      if (msg.angular.z > angular_max_)
-      {
-        // At maximum angular velocity.
-        msg.angular.z = angular_max_;
         next_state = State::look;
-      }
       break;
 
     case State::look:
-      if ((now - start_looking_).toSec() > look_time_)
+      msg.angular.z = rotate_model_.computeAngularZ(last_yaw_, a0, dt);
+      if (msg.angular.z == 0)
       {
-        // Time's up. Pick the best direction for forward motion and transition.
-        int best_bucket {0};
-        auto best_signal = std::numeric_limits<double>::max();
-
-        for (int i = 0; i < map_.size(); ++i)
-        {
-          if (map_[i].isEmpty())
-          {
-            ROS_WARN("Empty bucket %d (we didn't go all the way around)", i);
-            continue;
-          }
-
-          if (map_[i].normalized() < best_signal)
-          {
-            best_bucket = i;
-            best_signal = map_[i].normalized();
-          }
-        }
-
-        best_yaw_ = start_yaw_ + angles::from_degrees(best_bucket);
-
-        // Start spinning into position. Maintain angular velocity for now.
-        // TODO sense that we should decelerate immediately, and start doing so
-        // TODO for 50% of the cases we should reverse the direction of spin and get there faster
-        msg.angular.z = angular_max_;
+        rotate_model_.initGoalAngle(last_yaw_, start_yaw_ + scan_.getBestAngle());
         next_state = State::spin;
-      }
-      else
-      {
-        // Keep looking.
-        msg.angular.z = angular_max_;
       }
       break;
 
     case State::spin:
-    {
-      // Did we spin into position?
-      auto yaw = getYaw(last_odom_.pose.pose.orientation);
-      if (std::abs(angles::shortest_angular_distance(start_yaw_, yaw)) < 0.2) // TODO
+      msg.angular.z = rotate_model_.computeAngularZ(last_yaw_, a0, dt);
+      if (msg.angular.z == 0)
       {
-        // Start slowing down immediately, and transition into decel mode.
-        msg.angular.z = a0 - angular_accel_ * dt;
-        next_state = State::spin_decel;
-      }
-      else
-      {
-        // Keep spinning.
-        msg.angular.z = angular_max_;
-      }
-      break;
-    }
-
-    case State::spin_decel:
-      msg.angular.z = a0 - angular_accel_ * dt;
-      if (msg.angular.z < 0.0)
-      {
-        // We've stopped. Start driving.
-        msg.angular.z = 0.0;
-        next_state = State::drive_accel;
-      }
-      break;
-
-    case State::drive_accel:
-      msg.linear.x = v0 + linear_accel_ * dt;
-      if (msg.linear.x > linear_max_)
-      {
-        // At maximum linear velocity.
-        msg.linear.x = linear_max_;
+        drive_model_.initDrive();
         next_state = State::drive;
       }
       break;
 
     case State::drive:
-      // Keep driving.
-      msg.linear.x = linear_max_;
-      break;
-
-    case State::drive_decel:
-      msg.linear.x = v0 - linear_accel_ * dt;
-      if (msg.linear.x < 0.0)
+      msg.linear.x = drive_model_.computeLinearX(v0, dt);
+      if (msg.linear.x == 0)
       {
-        // We've stopped. Start looking around.
-        msg.linear.x = 0.0;
-        next_state = State::look_accel;
+        rotate_model_.initFullCircle(last_yaw_);
+        next_state = State::look;
       }
       break;
 
@@ -298,18 +249,17 @@ void Wander::tick()
 
   // Execute any pending transitions.
   if (next_state != state_)
-    transition(next_state);
+    transition(next_state);  // TODO move this here?
 }
 
 // Handle odometry messages.
-void Wander::odomCallback(const nav_msgs::OdometryConstPtr& msg)
+void Wander::odomCallback(const nav_msgs::OdometryConstPtr &msg)
 {
-  last_odom_ = *msg;
-  last_odom_time_ = ros::Time::now();
+  last_yaw_ = getYaw(msg->pose.pose.orientation);
 }
 
 // Helper: did we hit something?
-bool isCollision(const ca_msgs::BumperConstPtr& msg)
+bool isCollision(const ca_msgs::BumperConstPtr &msg)
 {
   if (msg->is_left_pressed)
   {
@@ -327,7 +277,7 @@ bool isCollision(const ca_msgs::BumperConstPtr& msg)
 }
 
 // Helper: are we really close to hitting something?
-bool isTooClose(const ca_msgs::BumperConstPtr& msg)
+bool isTooClose(const ca_msgs::BumperConstPtr &msg)
 {
   if (msg->is_light_left)
   {
@@ -369,7 +319,7 @@ bool isTooClose(const ca_msgs::BumperConstPtr& msg)
 }
 
 // Handle bumper messages.
-void Wander::bumperCallback(const ca_msgs::BumperConstPtr& msg)
+void Wander::bumperCallback(const ca_msgs::BumperConstPtr &msg)
 {
   auto now = ros::Time::now();
   auto dt = (now - last_bumper_time_).toSec();
@@ -385,27 +335,15 @@ void Wander::bumperCallback(const ca_msgs::BumperConstPtr& msg)
     // Process the IR signals -- the so-called "light bumper."
     switch (state_)
     {
-      case State::look_accel:
       case State::look:
       {
-        // Update our local map.
-        auto yaw = getYaw(last_odom_.pose.pose.orientation);
-        auto degrees = angles::to_degrees(angles::normalize_angle_positive(yaw - start_yaw_));
-        int first_bucket = degrees - light_bumper_center_ - light_bumper_range_ / 2;
-        int last_bucket = first_bucket + light_bumper_range_;
-        for (int bucket = first_bucket; bucket < last_bucket; ++bucket)
-        {
-          int wrapped_bucket = bucket < map_.size() ? bucket : bucket - map_.size();
-          map_[wrapped_bucket].update(msg->light_signal_front_left, dt);
-        }
+        scan_.putValue(last_yaw_ - start_yaw_, msg->light_signal_front_left);
         break;
       }
 
-      case State::drive_accel:
       case State::drive:
-        // If we're too close, decelerate.
         if (isTooClose(msg))
-          transition(State::drive_decel);
+          drive_model_.initStop();
         break;
 
       default:
@@ -418,31 +356,14 @@ void Wander::bumperCallback(const ca_msgs::BumperConstPtr& msg)
   last_bumper_time_ = now;
 
   // Execute any pending transitions.
+  // TODO remove this?
   if (next_state != state_)
     transition(next_state);
 }
 
 // Handle wheeldrop messages.
-void Wander::wheeldropCallback(const std_msgs::EmptyConstPtr& msg)
+void Wander::wheeldropCallback(const std_msgs::EmptyConstPtr &msg)
 {
   ROS_WARN("[WANDER] Wheel drop");
   transition(State::emergency_stop);
-}
-
-int main(int argc, char** argv)
-{
-  ros::init(argc, argv, "wander");
-  ros::NodeHandle nh;
-
-  Wander wander{nh};
-
-  ros::Rate r(10);
-  while (ros::ok())
-  {
-    r.sleep();
-    ros::spinOnce();
-    wander.tick();
-  }
-
-  return 0;
 }
