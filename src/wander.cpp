@@ -167,8 +167,6 @@ Wander::Wander(ros::NodeHandle &nh)
 }
 
 // Transition to a new state.
-// TODO consolidate state transition logic; currently split between spinOnce()
-// and here
 void Wander::transition(State state)
 {
   ROS_INFO("[WANDER] Transition from %s to %s", toString(state_), toString(state));
@@ -178,11 +176,17 @@ void Wander::transition(State state)
   switch (state)
   {
     case State::look:
-      // Note the current yaw.
       start_yaw_ = last_yaw_;
-
-      // Reset our local map.
       scan_.init();
+      rotate_model_.initFullCircle(last_yaw_);
+      break;
+
+    case State::spin:
+      rotate_model_.initGoalAngle(last_yaw_, start_yaw_ + scan_.getBestAngle());
+      break;
+
+    case State::drive:
+      drive_model_.initDrive();
       break;
 
     case State::emergency_stop:
@@ -196,11 +200,8 @@ void Wander::transition(State state)
 // We're called at 10Hz. Publish a new velocity.
 void Wander::spinOnce()
 {
-  // TODO do we need these auto vars?
   auto now = ros::Time::now();
   auto dt = (now - last_twist_time_).toSec();
-  auto v0 = last_twist_.linear.x;   // TODO only makes sense if we're driving
-  auto a0 = last_twist_.angular.z;  // TODO only makes sense if we're looking or spinning
   auto next_state = state_;
   geometry_msgs::Twist msg;  // Init to 0, 0, 0, 0, 0, 0
 
@@ -212,30 +213,21 @@ void Wander::spinOnce()
       break;
 
     case State::look:
-      msg.angular.z = rotate_model_.computeAngularZ(last_yaw_, a0, dt);
-      if (msg.angular.z == 0)
-      {
-        rotate_model_.initGoalAngle(last_yaw_, start_yaw_ + scan_.getBestAngle());
+      msg.angular.z = rotate_model_.computeAngularZ(last_yaw_, last_twist_.angular.z, dt);
+      if (msg.angular.z == 0.0)
         next_state = State::spin;
-      }
       break;
 
     case State::spin:
-      msg.angular.z = rotate_model_.computeAngularZ(last_yaw_, a0, dt);
-      if (msg.angular.z == 0)
-      {
-        drive_model_.initDrive();
+      msg.angular.z = rotate_model_.computeAngularZ(last_yaw_, last_twist_.angular.z, dt);
+      if (msg.angular.z == 0.0)
         next_state = State::drive;
-      }
       break;
 
     case State::drive:
-      msg.linear.x = drive_model_.computeLinearX(v0, dt);
-      if (msg.linear.x == 0)
-      {
-        rotate_model_.initFullCircle(last_yaw_);
+      msg.linear.x = drive_model_.computeLinearX(last_twist_.linear.x, dt);
+      if (msg.linear.x == 0.0)
         next_state = State::look;
-      }
       break;
 
     default:
@@ -249,7 +241,7 @@ void Wander::spinOnce()
 
   // Execute any pending transitions.
   if (next_state != state_)
-    transition(next_state);  // TODO move this here?
+    transition(next_state);
 }
 
 // Handle odometry messages.
@@ -321,44 +313,32 @@ bool isTooClose(const ca_msgs::BumperConstPtr &msg)
 // Handle bumper messages.
 void Wander::bumperCallback(const ca_msgs::BumperConstPtr &msg)
 {
-  auto now = ros::Time::now();
-  auto dt = (now - last_bumper_time_).toSec();
-  auto next_state = state_;
-
   // Check the bumper switches.
   if (state_ != State::emergency_stop && isCollision(msg))
   {
-    next_state = State::emergency_stop;
+    transition(State::emergency_stop);
+    return;
   }
-  else
+
+  // Process the IR signals -- the so-called "light bumper."
+  switch (state_)
   {
-    // Process the IR signals -- the so-called "light bumper."
-    switch (state_)
-    {
-      case State::look:
-      {
-        scan_.putValue(last_yaw_ - start_yaw_, msg->light_signal_front_left);
-        break;
-      }
+    case State::look:
+      scan_.putValue(last_yaw_ - start_yaw_, msg->light_signal_front_left);
+      break;
 
-      case State::drive:
-        if (isTooClose(msg))
-          drive_model_.initStop();
-        break;
+    case State::drive:
+      if (isTooClose(msg))
+        drive_model_.initStop(); // Stop gracefully
+      break;
 
-      default:
-        break;
-    }
+    default:
+      break;
   }
 
   // Save this message for future ref.
   last_bumper_ = *msg;
-  last_bumper_time_ = now;
-
-  // Execute any pending transitions.
-  // TODO remove this?
-  if (next_state != state_)
-    transition(next_state);
+  last_bumper_time_ = ros::Time::now();
 }
 
 // Handle wheeldrop messages.
