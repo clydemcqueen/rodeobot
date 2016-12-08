@@ -33,6 +33,26 @@ double computeVelocity(bool accelerate, double v0, double a, double max_v)
   }
 }
 
+// Helper: enum to string.
+const char *toString(State state)
+{
+  switch (state)
+  {
+    case State::start:
+      return "start";
+    case State::look:
+      return "look";
+    case State::spin:
+      return "spin";
+    case State::drive:
+      return "drive";
+    case State::emergency_stop:
+      return "emergency_stop";
+      // Omit default case to trigger compiler warning for missing cases.
+  };
+  return "missing";
+}
+
 // Initialize our scan map.
 void Scan::init()
 {
@@ -97,7 +117,6 @@ void RotateModel::initFullCircle(double current_yaw)
   suppress_goal_check_ = true;
 }
 
-
 // Compute the angular velocity we want. Return 0 if we're at our goal.
 double RotateModel::computeAngularZ(double current_yaw, double v0, double dt)
 {
@@ -136,31 +155,10 @@ double RotateModel::computeAngularZ(double current_yaw, double v0, double dt)
   }
 }
 
-// Helper for debugging.
-const char *toString(State state)
-{
-  switch (state)
-  {
-    case State::start:
-      return "start";
-    case State::look:
-      return "look";
-    case State::spin:
-      return "spin";
-    case State::drive:
-      return "drive";
-    case State::emergency_stop:
-      return "emergency_stop";
-      // Omit default case to trigger compiler warning for missing cases.
-  };
-  return "missing";
-}
-
 // Constructor.
 Wander::Wander(ros::NodeHandle &nh)
 {
   cmd_vel_pub_ = nh.advertise<geometry_msgs::Twist>("cmd_vel", 1);
-
   odom_sub_ = nh.subscribe("odom", 1, &Wander::odomCallback, this);
   bumper_sub_ = nh.subscribe("bumper", 1, &Wander::bumperCallback, this);
   wheeldrop_sub_ = nh.subscribe("wheeldrop", 1, &Wander::wheeldropCallback, this);
