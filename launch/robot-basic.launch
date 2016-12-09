@@ -15,6 +15,7 @@
   <!-- Simulate a laser scanner; TODO use all the data! -->
   <node name="cloud2scan" pkg="depthimage_to_laserscan" type="depthimage_to_laserscan">
     <remap from="image" to="camera/depth/image_raw" />
+    <param name="~scan_height" value="20" />
   </node>
 
   <!-- Monitor the battery -->

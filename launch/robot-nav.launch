@@ -1,5 +1,8 @@
 <launch>
 
+  <!-- Latch cmd_vel commands for 5s to compensate for flaky wifi -->
+  <param name="/ca_driver/latch_cmd_duration" value="5" />
+
   <!-- Launch Create2 base nodes; this also provides an URDF file -->
   <include file="$(find ca_driver)/launch/create_2.launch" />
 
@@ -15,11 +18,11 @@
   <!-- Simulate a laser scanner for gmapping -->
   <node name="cloud2scan" pkg="depthimage_to_laserscan" type="depthimage_to_laserscan">
     <remap from="image" to="camera/depth/image_raw" />
-    <param name="~scan_height" value="10" />
+    <param name="~scan_height" value="20" />
   </node>
 
   <!-- Run gmapping -->
-  <node name="mapping" pkg="gmapping" type="slam_gmapping" />
+  <node name="mapping" pkg="gmapping" type="slam_gmapping" output="screen" />
 
   <!-- Run the map server -->
   <!-- <node name="map_server" pkg="map_server" type="map_server" args="$(find my_map_package)/my_map.pgm my_map_resolution"/> -->
