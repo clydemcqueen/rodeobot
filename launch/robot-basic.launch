@@ -1,6 +1,6 @@
 <launch>
 
-  <!-- Latch cmd_vel commands for 5s to compensate for flaky wifi -->
+  <!-- Latch cmd_vel commands for 5s to compensate for flaky wifi (only for teleop) -->
   <param name="/ca_driver/latch_cmd_duration" value="5" />
 
   <!-- Launch Create2 base nodes; this also provides an URDF file -->
@@ -10,12 +10,16 @@
   <include file="$(find realsense_camera)/launch/r200_nodelet_rgbd.launch" />
 
   <!-- Static transform to link base to camera; TODO replace this with URDF mods -->
-  <node name="base2camera" pkg="tf" type="static_transform_publisher" args="0 0 0.13 0 0 0 base_link camera_link 100" />
+  <node name="base2camera" pkg="tf" type="static_transform_publisher" args="0 0 0.16 0 0 0 base_link camera_link 100" />
 
-  <!-- Simulate a laser scanner; TODO use all the data! -->
+  <!-- Static transform to link base_footprint and base_link; TODO figure out the URDF bug -->
+  <node name="footprint2link" pkg="tf" type="static_transform_publisher" args="0 0 0.017 0 0 0 base_footprint base_link 100" />
+
+  <!-- Simulate a laser scanner -->
   <node name="cloud2scan" pkg="depthimage_to_laserscan" type="depthimage_to_laserscan">
-    <remap from="image" to="camera/depth/image_raw" />
+    <remap from="image" to="camera/depth/image_rect" />
     <param name="~scan_height" value="20" />
+    <param name="~output_frame_id" value="camera_link" /> <!-- Important! -->
   </node>
 
   <!-- Monitor the battery -->
