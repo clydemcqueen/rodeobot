@@ -10,7 +10,7 @@
   <include file="$(find realsense_camera)/launch/r200_nodelet_rgbd.launch" />
 
   <!-- Static transform to link base to camera; TODO replace this with URDF mods -->
-  <node name="base2camera" pkg="tf" type="static_transform_publisher" args="0 0 0.16 0 0 0 base_link camera_link 100" />
+  <node name="base2camera" pkg="tf" type="static_transform_publisher" args="-0.13 0 0.19 0 0 0 base_link camera_link 100" />
 
   <!-- Static transform to link base_footprint and base_link; TODO figure out the URDF bug -->
   <node name="footprint2link" pkg="tf" type="static_transform_publisher" args="0 0 0.017 0 0 0 base_footprint base_link 100" />
@@ -23,7 +23,7 @@
   </node>
 
   <!-- Monitor the battery -->
-  <node name="batteryMon" pkg="rodeobot" type="battery_monitor" output="screen" />
+  <node name="battery_monitor" pkg="rodeobot" type="battery_monitor" output="screen" />
 
   <!-- Run gmapping -->
   <!-- <node name="mapping" pkg="gmapping" type="slam_gmapping" output="screen" /> -->
@@ -36,12 +36,12 @@
   <include file="$(find amcl)/examples/amcl_diff.launch" />
 
   <!-- Run the navigation control stack -->
-  <node name="moveBase" pkg="move_base" type="move_base" respawn="false" output="screen">
+  <node name="move_base" pkg="move_base" type="move_base" respawn="false" output="screen">
+    <rosparam file="$(find rodeobot)/launch/base_local_planner_params.yaml" command="load" />
     <rosparam file="$(find rodeobot)/launch/costmap_common_params_laser.yaml" command="load" ns="global_costmap" />
     <rosparam file="$(find rodeobot)/launch/costmap_common_params_laser.yaml" command="load" ns="local_costmap" />
     <rosparam file="$(find rodeobot)/launch/local_costmap_params.yaml" command="load" />
     <rosparam file="$(find rodeobot)/launch/global_costmap_params.yaml" command="load" />
-    <rosparam file="$(find rodeobot)/launch/base_local_planner_params.yaml" command="load" />
   </node>
 
 </launch>
