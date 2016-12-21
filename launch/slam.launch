@@ -30,16 +30,16 @@
     <param name="angularUpdate" value="0.5"/>
     <param name="map_update_interval" value="5"/>
     <param name="minimumScore" value="0.0"/>
-    <param name="xmin" value="-100.0"/>
-    <param name="ymin" value="-100.0"/>
-    <param name="xmax" value="100.0"/>
-    <param name="ymax" value="100.0"/>
+    <param name="particles" value="30"/>
+    <param name="linearUpdate" value="1.0"/>
 
     <!-- Override defaults -->
-    <param name="particles" value="50"/>
-    <param name="maxUrange" value="6.0"/>
-    <param name="maxRange" value="8.0"/>
-    <param name="linearUpdate" value="0.5"/>
+    <param name="xmin" value="-10.0"/>
+    <param name="ymin" value="-10.0"/>
+    <param name="xmax" value="10.0"/>
+    <param name="ymax" value="10.0"/>
+    <param name="maxUrange" value="3.5"/>
+    <param name="maxRange" value="10.0"/>
 
   </node>
 
