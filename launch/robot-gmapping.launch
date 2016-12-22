@@ -1,0 +1,78 @@
+<launch>
+
+  <!-- Latch cmd_vel commands for 5s to compensate for flaky wifi (only for teleop) -->
+  <param name="/ca_driver/latch_cmd_duration" value="5" />
+
+  <!-- Launch Create2 base nodes; this also provides robot description -->
+  <include file="$(find ca_driver)/launch/create_2.launch" />
+
+  <!-- Launch RealSense camera nodes -->
+  <include file="$(find realsense_camera)/launch/r200_nodelet_rgbd.launch" />
+
+  <!-- Static transform to link base to camera; TODO replace this with URDF mods -->
+  <node name="base2camera" pkg="tf" type="static_transform_publisher" args="-0.005 0 0.165 0 0 0 base_link camera_link 100" />
+
+  <!-- Static transform to link base_footprint and base_link; TODO figure out the URDF bug -->
+  <node name="footprint2link" pkg="tf" type="static_transform_publisher" args="0 0 0.017 0 0 0 base_footprint base_link 100" />
+
+  <!-- Simulate a laser scanner -->
+  <node name="cloud2scan" pkg="depthimage_to_laserscan" type="depthimage_to_laserscan">
+    <remap from="image" to="camera/depth/image_rect" />
+    <param name="~scan_height" value="10" />
+    <param name="~output_frame_id" value="camera_link" /> <!-- Important! -->
+  </node>
+
+  <!-- Monitor the battery -->
+  <node name="battery_monitor" pkg="rodeobot" type="battery_monitor" output="screen" />
+
+  <!-- Run gmapping -->
+  <node name="mapper" pkg="gmapping" type="slam_gmapping" output="screen">
+
+    <!-- These are defaults: -->
+    <param name="base_frame" value="base_link"/>
+    <param name="odom_frame" value="odom"/>
+    <param name="sigma" value="0.05"/>
+    <param name="kernelSize" value="1"/>
+    <param name="lstep" value="0.05"/>
+    <param name="astep" value="0.05"/>
+    <param name="lsigma" value="0.075"/>
+    <param name="ogain" value="3.0"/>
+    <param name="lskip" value="0"/>
+    <param name="srr" value="0.01"/>
+    <param name="srt" value="0.02"/>
+    <param name="str" value="0.01"/>
+    <param name="stt" value="0.02"/>
+    <param name="temporalUpdate" value="-1.0"/>
+    <param name="resampleThreshold" value="0.5"/>
+    <param name="delta" value="0.05"/>
+    <param name="llsamplerange" value="0.01"/>
+    <param name="llsamplestep" value="0.01"/>
+    <param name="lasamplerange" value="0.005"/>
+    <param name="lasamplestep" value="0.005"/>
+    <param name="iterations" value="5"/>
+    <param name="angularUpdate" value="0.5"/>
+    <param name="map_update_interval" value="5"/>
+    <param name="minimumScore" value="0.0"/>
+    <param name="particles" value="30"/>
+    <param name="linearUpdate" value="1.0"/>
+
+    <!-- Override defaults -->
+    <param name="xmin" value="-10.0"/>
+    <param name="ymin" value="-10.0"/>
+    <param name="xmax" value="10.0"/>
+    <param name="ymax" value="10.0"/>
+    <param name="maxUrange" value="3.5"/>
+    <param name="maxRange" value="10.0"/>
+
+  </node>
+
+  <!-- Run the navigation control stack -->
+  <node name="move_base" pkg="move_base" type="move_base" respawn="false" output="screen">
+    <rosparam file="$(find rodeobot)/launch/base_local_planner_params.yaml" command="load" />
+    <rosparam file="$(find rodeobot)/launch/costmap_common_params_laser.yaml" command="load" ns="global_costmap" />
+    <rosparam file="$(find rodeobot)/launch/costmap_common_params_laser.yaml" command="load" ns="local_costmap" />
+    <rosparam file="$(find rodeobot)/launch/local_costmap_params.yaml" command="load" />
+    <rosparam file="$(find rodeobot)/launch/global_costmap_params.yaml" command="load" />
+  </node>
+
+</launch>
