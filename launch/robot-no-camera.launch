@@ -1,15 +1,6 @@
 <launch>
 
-  <!-- Latch cmd_vel commands for 5s to compensate for flaky wifi -->
-  <param name="/ca_driver/latch_cmd_duration" value="5" />
-
-  <!-- Launch Create2 base nodes; this also provides an URDF file -->
-  <include file="$(find ca_driver)/launch/create_2.launch" />
-
-  <!-- Monitor the battery -->
-  <node name="batteryMon" pkg="rodeobot" type="battery_monitor" output="screen" />
-
-  <!-- Monitor the battery -->
-  <node name="simpleDrive" pkg="rodeobot" type="simple_drive" output="screen" />
+  <!-- Include the core nodes -->
+  <include file="$(find rodeobot)/launch/robot-core.xml" />
 
 </launch>

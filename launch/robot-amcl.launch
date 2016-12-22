@@ -1,29 +1,10 @@
 <launch>
 
-  <!-- Latch cmd_vel commands for 5s to compensate for flaky wifi (only for teleop) -->
-  <param name="/ca_driver/latch_cmd_duration" value="5" />
+  <!-- Include the core nodes -->
+  <include file="$(find rodeobot)/launch/robot-core.xml" />
 
-  <!-- Launch Create2 base nodes; this also provides an URDF file -->
-  <include file="$(find ca_driver)/launch/create_2.launch" />
-
-  <!-- Launch RealSense camera nodes -->
-  <include file="$(find realsense_camera)/launch/r200_nodelet_rgbd.launch" />
-
-  <!-- Static transform to link base to camera; TODO replace this with URDF mods -->
-  <node name="base2camera" pkg="tf" type="static_transform_publisher" args="-0.005 0 0.165 0 0 0 base_link camera_link 100" />
-
-  <!-- Static transform to link base_footprint and base_link; TODO figure out the URDF bug -->
-  <node name="footprint2link" pkg="tf" type="static_transform_publisher" args="0 0 0.017 0 0 0 base_footprint base_link 100" />
-
-  <!-- Simulate a laser scanner -->
-  <node name="cloud2scan" pkg="depthimage_to_laserscan" type="depthimage_to_laserscan">
-    <remap from="image" to="camera/depth/image_rect" />
-    <param name="~scan_height" value="20" />
-    <param name="~output_frame_id" value="camera_link" /> <!-- Important! -->
-  </node>
-
-  <!-- Monitor the battery -->
-  <node name="battery_monitor" pkg="rodeobot" type="battery_monitor" output="screen" />
+  <!-- Include the camera nodes -->
+  <include file="$(find rodeobot)/launch/robot-camera.xml" />
 
   <!-- Run the map server -->
   <node name="map_server" pkg="map_server" type="map_server" args="/home/clyde/catkin_ws/maps/big.yaml"/>
