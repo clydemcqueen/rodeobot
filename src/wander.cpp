@@ -2,6 +2,8 @@
 #include <angles/angles.h>
 #include <tf/transform_datatypes.h>
 
+namespace rodeobot {
+
 // Helper: compute yaw from a quaternion message.
 double getYaw(const geometry_msgs::Quaternion msg)
 {
@@ -13,7 +15,7 @@ double getYaw(const geometry_msgs::Quaternion msg)
 }
 
 // Helper: compute velocity.
-double computeVelocity(bool accelerate, double v0, double a, double max_v)
+double computeVelocity(bool accelerate, double v0, double a, double min_v, double max_v)
 {
   if (accelerate)
   {
@@ -26,7 +28,7 @@ double computeVelocity(bool accelerate, double v0, double a, double max_v)
   else
   {
     // Decelerate
-    if (v0 - a < 0.0)
+    if (v0 - a < min_v)
       return 0.0;
     else
       return v0 - a;
@@ -53,13 +55,11 @@ const char *toString(State state)
   return "missing";
 }
 
-// Initialize our scan map.
 void Scan::init()
 {
   std::fill(map_.begin(), map_.end(), 0.0);
 }
 
-// Put a value in our scan map.
 void Scan::putValue(double yaw, double signal)
 {
   auto degrees = static_cast<int>(angles::to_degrees(angles::normalize_angle_positive(yaw)));
@@ -68,7 +68,6 @@ void Scan::putValue(double yaw, double signal)
     map_[degrees] = signal;
 }
 
-// Determine the best angle -- the angle with the lowest non-0 value.
 double Scan::getBestAngle()
 {
   int low_index{ 0 };
@@ -83,23 +82,15 @@ double Scan::getBestAngle()
     }
   }
 
+  ROS_INFO("[WANDER] Best angle %d, value %f", low_index, low_value);
   return angles::from_degrees(static_cast<double>(low_index));
 }
 
-const double DriveModel::max_v_{ 0.4 };
-const double DriveModel::accel_{ 0.1 };
-
-// Compute the desired linear velocity. Return 0 if we're at our goal.
 double DriveModel::computeLinearX(double v0, double dt)
 {
-  return computeVelocity(driving_, v0, accel_ * dt, max_v_);
+  return computeVelocity(driving_, v0, accel_ * dt, min_v_, max_v_);
 }
 
-const double RotateModel::max_v_{ 0.2 };
-const double RotateModel::accel_{ 0.1 };
-const double RotateModel::epsilon_{ 2 * M_PI / 360 };
-
-// Rotate to a particular angle.
 void RotateModel::initGoalAngle(double current_yaw, double goal_yaw)
 {
   goal_yaw_ = goal_yaw;
@@ -108,7 +99,6 @@ void RotateModel::initGoalAngle(double current_yaw, double goal_yaw)
   suppress_goal_check_ = false;
 }
 
-// Rotate in place one full circle and end up in the same pose.
 void RotateModel::initFullCircle(double current_yaw)
 {
   goal_yaw_ = current_yaw;
@@ -117,14 +107,14 @@ void RotateModel::initFullCircle(double current_yaw)
   suppress_goal_check_ = true;
 }
 
-// Compute the angular velocity we want. Return 0 if we're at our goal.
 double RotateModel::computeAngularZ(double current_yaw, double v0, double dt)
 {
   auto error = std::abs(angles::shortest_angular_distance(current_yaw, goal_yaw_));
+  ROS_INFO("[WANDER] Error %f", error);
 
   // Have we reached our goal?
   if (!suppress_goal_check_ && error < epsilon_)
-    return 0;
+    return 0.0;
 
   // Can we stop suppressing the goal check?
   if (full_circle_ && suppress_goal_check_ && error > epsilon_)
@@ -143,28 +133,42 @@ double RotateModel::computeAngularZ(double current_yaw, double v0, double dt)
   {
     // Protect against wraparound.
     auto adj_goal = current_yaw > goal_yaw_ ? goal_yaw_ + 2 * M_PI : goal_yaw_;
-
-    return computeVelocity(current_yaw < adj_goal - stopping_yaw, v0, a, max_v_);
+    ROS_INFO("[WANDER] Current yaw %f, adj goal %f", current_yaw, adj_goal);
+    bool accelerate = suppress_goal_check_ || current_yaw < adj_goal - stopping_yaw;
+    return computeVelocity(accelerate, v0, a, min_v_, max_v_);
   }
   else  // Counterclockwise
   {
     // Protect against wraparound.
     auto adj_curr = current_yaw < goal_yaw_ ? current_yaw + 2 * M_PI : current_yaw;
-
-    return -computeVelocity(adj_curr > goal_yaw_ + stopping_yaw, -v0, a, max_v_);
+    bool accelerate = suppress_goal_check_ || adj_curr > goal_yaw_ + stopping_yaw;
+    return -computeVelocity(accelerate, -v0, a, min_v_, max_v_);
   }
 }
 
-// Constructor.
 Wander::Wander(ros::NodeHandle &nh)
 {
+  nh.getParam("drive_min_v", drive_model_.min_v_);
+  nh.getParam("drive_max_v", drive_model_.max_v_);
+  nh.getParam("drive_accel", drive_model_.accel_);
+
+  ROS_INFO("[WANDER] Drive min %f max %f accel %f", 
+    drive_model_.min_v_, drive_model_.max_v_, drive_model_.accel_);
+
+  nh.getParam("rotate_min_v", rotate_model_.min_v_);
+  nh.getParam("rotate_max_v", rotate_model_.max_v_);
+  nh.getParam("rotate_accel", rotate_model_.accel_);
+  nh.getParam("rotate_epsilon", rotate_model_.epsilon_);
+
+  ROS_INFO("[WANDER] Rotate min %f max %f accel %f epsilon %f", 
+    rotate_model_.min_v_, rotate_model_.max_v_, rotate_model_.accel_, rotate_model_.epsilon_);
+
   cmd_vel_pub_ = nh.advertise<geometry_msgs::Twist>("cmd_vel", 1);
   odom_sub_ = nh.subscribe("odom", 1, &Wander::odomCallback, this);
   bumper_sub_ = nh.subscribe("bumper", 1, &Wander::bumperCallback, this);
   wheeldrop_sub_ = nh.subscribe("wheeldrop", 1, &Wander::wheeldropCallback, this);
 }
 
-// Transition to a new state.
 void Wander::transition(State state)
 {
   ROS_INFO("[WANDER] Transition from %s to %s", toString(state_), toString(state));
@@ -174,7 +178,7 @@ void Wander::transition(State state)
   switch (state)
   {
     case State::look:
-      start_yaw_ = last_yaw_;
+      start_yaw_ = last_yaw_; // TODO pull this from RotateModel
       scan_.init();
       rotate_model_.initFullCircle(last_yaw_);
       break;
@@ -195,18 +199,18 @@ void Wander::transition(State state)
   }
 }
 
-// We're called at 10Hz. Publish a new velocity.
 void Wander::spinOnce()
 {
   auto now = ros::Time::now();
   auto dt = (now - last_twist_time_).toSec();
+  ROS_INFO("[WANDER] dt %f", dt);
   auto next_state = state_;
   geometry_msgs::Twist msg;  // Init to 0, 0, 0, 0, 0, 0
 
   switch (state_)
   {
     case State::start:
-      if (last_odom_.header.seq > 0 && last_bumper_.header.seq > 0)
+      if (saw_odom_ && saw_bumper_)
         next_state = State::look;
       break;
 
@@ -242,9 +246,9 @@ void Wander::spinOnce()
     transition(next_state);
 }
 
-// Handle odometry messages.
 void Wander::odomCallback(const nav_msgs::OdometryConstPtr &msg)
 {
+  saw_odom_ = true;
   last_yaw_ = getYaw(msg->pose.pose.orientation);
 }
 
@@ -308,9 +312,10 @@ bool isTooClose(const ca_msgs::BumperConstPtr &msg)
   return false;
 }
 
-// Handle bumper messages.
 void Wander::bumperCallback(const ca_msgs::BumperConstPtr &msg)
 {
+  saw_bumper_ = true;
+
   // Check the bumper switches.
   if (state_ != State::emergency_stop && isCollision(msg))
   {
@@ -333,15 +338,12 @@ void Wander::bumperCallback(const ca_msgs::BumperConstPtr &msg)
     default:
       break;
   }
-
-  // Save this message for future ref.
-  last_bumper_ = *msg;
-  last_bumper_time_ = ros::Time::now();
 }
 
-// Handle wheeldrop messages.
 void Wander::wheeldropCallback(const std_msgs::EmptyConstPtr &msg)
 {
   ROS_WARN("[WANDER] Wheel drop");
   transition(State::emergency_stop);
 }
+
+} // namespace rodeobot

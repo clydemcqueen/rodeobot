@@ -1,0 +1,33 @@
+<launch>
+
+  <!-- Launch base controller -->
+  <node name="driver" pkg="ca_driver" type="ca_driver" output="screen">
+    <param name="~loop_hz" value="30" />
+    <param name="~dev" value="/dev/ttyUSB0" />
+    <param name="~publish_tf" value="true"/>
+    <param name="~create_1" value="false" />
+  </node>
+
+  <!-- Load robot description -->
+  <include file="$(find ca_description)/launch/create_2.launch"/>
+
+  <!-- Static transform to link base_footprint and base_link; TODO figure out the URDF bug -->
+  <node name="footprint2link" pkg="tf" type="static_transform_publisher" args="0 0 0.017 0 0 0 base_footprint base_link 100" />
+
+  <!-- Monitor the battery -->
+  <node name="batteryMon" pkg="rodeobot" type="battery_monitor" output="screen" />
+
+  <!-- The wander node -->
+    <rosparam>
+      drive_min_v: 0.1 # 0.1
+      drive_max_v: 0.2 # 0.3
+      drive_accel: 1.0 # 0.3
+      rotate_min_v: 0.2 # 0.1
+      rotate_max_v: 2.0 # 0.4
+      rotate_accel: 2.0 # 0.4
+      rotate_epsilon: 0.02 # 0.02
+    </rosparam>
+  <node name="wander" pkg="rodeobot" type="wander_node" output="screen">
+  </node>
+
+</launch>

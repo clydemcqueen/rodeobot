@@ -4,7 +4,7 @@
 
 TEST(WanderTest, scan)
 {
-  Scan scan;
+  rodeobot::Scan scan;
 
   // Note: we need to pick integers where the degrees <> radians round trip works.
 
@@ -21,7 +21,7 @@ TEST(WanderTest, scan)
 
 TEST(WanderTest, drive)
 {
-  DriveModel model;
+  rodeobot::DriveModel model;
 
   model.initDrive();
   ASSERT_EQ(model.computeLinearX(0.0, 0.0), 0.0);
@@ -36,7 +36,7 @@ TEST(WanderTest, drive)
 
 TEST(WanderTest, rotate)
 {
-  RotateModel model;
+  rodeobot::RotateModel model;
 
   model.initGoalAngle(-1.5, 1.5);
   ASSERT_EQ(model.clockwise(), true);
@@ -49,6 +49,8 @@ TEST(WanderTest, rotate)
   ASSERT_EQ(model.computeAngularZ(1.5, 0.0, 0.0), 0.0);
   ASSERT_EQ(model.computeAngularZ(1.5, 0.0, 1.0), -model.accel_);
   ASSERT_EQ(model.computeAngularZ(1.5, 0.0, 10.0), -model.max_v_); // Assumes max_v_ / accel_ is <= 10
+
+  // TODO add test for full circle
 }
 
 int main(int argc, char **argv)

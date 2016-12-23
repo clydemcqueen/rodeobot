@@ -3,9 +3,9 @@
 int main(int argc, char **argv)
 {
   ros::init(argc, argv, "wander");
-  ros::NodeHandle nh;
+  ros::NodeHandle nh; // TODO use ("~") ?
 
-  Wander wander{ nh };
+  rodeobot::Wander wander{ nh };
 
   ros::Rate r(10);
   while (ros::ok())
