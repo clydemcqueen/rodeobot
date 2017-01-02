@@ -1,7 +1,9 @@
 <launch>
+
   <!-- Launch the visualizer. -->
   <node name="rviz" pkg="rviz" type="rviz" args="-d /home/clyde/catkin_ws/src/rodeobot/launch/control-basic.rviz" />
 
   <!-- Launch a simple teleop GUI. -->
   <node name="rqt_gui" pkg="rqt_gui" type="rqt_gui" />
+
 </launch> 

@@ -1,4 +1,4 @@
-<launch>
+<launch> <!-- TODO merge this w/ robot-core.xml -->
 
   <!-- Launch base controller -->
   <node name="driver" pkg="ca_driver" type="ca_driver" output="screen">
@@ -11,13 +11,11 @@
   <!-- Load robot description -->
   <include file="$(find ca_description)/launch/create_2.launch"/>
 
-  <!-- Static transform to link base_footprint and base_link; TODO figure out the URDF bug -->
-  <node name="footprint2link" pkg="tf" type="static_transform_publisher" args="0 0 0.017 0 0 0 base_footprint base_link 100" />
-
   <!-- Monitor the battery -->
   <node name="batteryMon" pkg="rodeobot" type="battery_monitor" output="screen" />
 
   <!-- The wander node -->
+  <!-- TODO move this inside the wander node; requires 2 nodehandles? -->
     <rosparam>
       drive_min_v: 0.1 # 0.1
       drive_max_v: 0.2 # 0.3
