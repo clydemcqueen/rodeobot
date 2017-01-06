@@ -1,0 +1,52 @@
+<launch>
+
+  <rosparam>
+    global_frame: outside
+    robot_base_frame: outside
+    foo:
+      global_frame: outside-foo
+      robot_base_frame: outside-foo
+    costmap:
+      global_frame: outside-costmap
+      robot_base_frame: outside-costmap
+  </rosparam>
+
+  <node name="my_costmap" pkg="rodeobot" type="ns_test" respawn="false" output="screen">
+    <rosparam>
+      global_frame: inside
+      robot_base_frame: inside
+      fee:
+        global_frame: inside-fee
+        robot_base_frame: inside-fee
+      costmap:
+        global_frame: inside-costmap
+        robot_base_frame: inside-costmap
+    </rosparam>
+  </node>
+
+  <!-- Here are the results:
+
+ * /costmap/global_frame: outside-costmap
+ * /costmap/robot_base_frame: outside-costmap
+ * /foo/global_frame: outside-foo
+ * /foo/robot_base_frame: outside-foo
+ * /global_frame: outside
+ * /my_costmap/costmap/global_frame: inside-costmap
+ * /my_costmap/costmap/robot_base_frame: inside-costmap
+ * /my_costmap/fee/global_frame: inside-fee
+ * /my_costmap/fee/robot_base_frame: inside-fee
+ * /my_costmap/global_frame: inside
+ * /my_costmap/robot_base_frame: inside
+ * /robot_base_frame: outside
+
+[ INFO] [1483718992.100252792]: tf_prefix ""
+[ INFO] [1483718992.113684020]: global_frame "inside-costmap"
+[ INFO] [1483718992.113910653]: robot_base_frame "inside-costmap"
+[ INFO] [1483718992.114019253]: global_frame "inside-costmap"
+[ INFO] [1483718992.114102509]: robot_base_frame "inside-costmap"
+
+	-->
+
+</launch>
+
+

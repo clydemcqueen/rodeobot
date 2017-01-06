@@ -55,7 +55,7 @@ const char *toString(State state)
   return "missing";
 }
 
-void Scan::init()
+void Scan::clear()
 {
   std::fill(map_.begin(), map_.end(), 0.0);
 }
@@ -179,7 +179,7 @@ void Wander::transition(State state)
   {
     case State::look:
       start_yaw_ = last_yaw_; // TODO pull this from RotateModel
-      scan_.init();
+      scan_.clear();
       rotate_model_.initFullCircle(last_yaw_);
       break;
 

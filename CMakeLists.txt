@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8.3)
 project(rodeobot)
 
 ## Find catkin macros and libraries
-find_package(catkin REQUIRED COMPONENTS roscpp rospy std_msgs)
+find_package(catkin REQUIRED COMPONENTS roscpp rospy std_msgs tf)
 
 ## Declare a catkin package
 catkin_package()
@@ -12,6 +12,9 @@ add_definitions(-std=c++14)
 
 ## Build our nodes
 include_directories(include ${catkin_INCLUDE_DIRS} ~/catkin_ws/devel_isolated/ca_msgs/include)
+
+add_executable(ns_test src/ns_test.cpp)
+target_link_libraries(ns_test ${catkin_LIBRARIES})
 
 add_executable(battery_monitor src/battery_monitor.cpp)
 target_link_libraries(battery_monitor ${catkin_LIBRARIES})
