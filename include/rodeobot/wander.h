@@ -16,11 +16,11 @@ namespace rodeobot {
 class Scan
 {
 private:
-  std::vector<double> map_{ std::vector<double>(360) };
+  std::vector<double> map_{std::vector<double>(360)};
 
 public:
-  // Initialize our scan map.
-  void init();
+  // Clear our scan map.
+  void clear();
 
   // Put a value in our scan map.
   void putValue(double yaw, double signal);
@@ -34,21 +34,21 @@ public:
 // Motion model: drive straight ahead.
 //===========================================================================
 
-class DriveModel
+class DriveModel // TODO subclass motion model
 {
 private:
-  bool driving_{ false };
+  bool driving_{false};
 
 public:
-  // ROS parameters. TODO do these need to be public?
-  double min_v_{ 0.1 };
-  double max_v_{ 0.3 };
-  double accel_{ 0.3 };
+  // ROS parameters. TODO do these need to be public? TODO make private
+  double min_v_{0.1};
+  double max_v_{0.3};
+  double accel_{0.3};
 
   bool driving() { return driving_; }
 
-  void initDrive() { driving_ = true; }
-  void initStop() { driving_ = false; }
+  void initDrive() { driving_ = true; } // TODO constructor
+  void initStop() { driving_ = false; } // TODO constructor
 
   // Compute the desired linear velocity. Return 0 if we're at our goal.
   double computeLinearX(double v0, double dt);
@@ -58,29 +58,29 @@ public:
 // Motion model: rotate in place.
 //===========================================================================
 
-class RotateModel
+class RotateModel // TODO subclass motion model
 {
 private:
-  double goal_yaw_{ 0.0 };            // Goal yaw
-  bool full_circle_{ false };         // True: rotate one full circle
-  bool clockwise_{ false };           // True: go clockwise
-  bool suppress_goal_check_{ false }; // True: suppress the goal check for now
+  double goal_yaw_{0.0};            // Goal yaw
+  bool full_circle_{false};         // True: rotate one full circle
+  bool clockwise_{false};           // True: go clockwise
+  bool suppress_goal_check_{false}; // True: suppress the goal check for now
 
 public:
-  // ROS parameters. TODO do these need to be public?
-  double min_v_{ 0.1 };
-  double max_v_{ 0.4 };
-  double accel_{ 0.4 };
-  double epsilon_{ 0.02 };
+  // ROS parameters. TODO do these need to be public? TODO make privte
+  double min_v_{0.1};
+  double max_v_{0.4};
+  double accel_{0.4};
+  double epsilon_{0.02};
 
   bool fullCircle() { return full_circle_; }
   bool clockwise() { return clockwise_; }
 
   // Rotate to a particular angle.
-  void initGoalAngle(double current_yaw, double goal_yaw);
+  void initGoalAngle(double current_yaw, double goal_yaw); // TODO constructor
 
   // Rotate in place one full circle and end up in the same pose.
-  void initFullCircle(double current_yaw);
+  void initFullCircle(double current_yaw); // TODO constructor
 
   // Compute the angular velocity we want. Return 0 if we're at our goal.
   double computeAngularZ(double yaw, double v0, double dt);
@@ -103,21 +103,21 @@ class Wander
 {
 private:
   // Used for deciding when to start.
-  bool saw_odom_{ false };
-  bool saw_bumper_{ false };
+  bool saw_odom_{false};
+  bool saw_bumper_{false};
 
   // Last yaw we saw.
-  double last_yaw_{ 0.0 };
+  double last_yaw_{0.0};
 
   // Last twist we sent.
   geometry_msgs::Twist last_twist_;
   ros::Time last_twist_time_;
 
   // Internal state.
-  State state_{ State::start };
-  double start_yaw_{ 0.0 };
-  RotateModel rotate_model_;
-  DriveModel drive_model_;
+  State state_{State::start};
+  double start_yaw_{0.0};
+  RotateModel rotate_model_; // TODO construct as needed
+  DriveModel drive_model_; // TODO construct as needed
   Scan scan_;
 
   // Transition to a new state.
@@ -138,8 +138,8 @@ private:
   void wheeldropCallback(const std_msgs::EmptyConstPtr &msg);
 
 public:
-  Wander(ros::NodeHandle &nh);
-  ~Wander(){};  // Suppress copy and move constructors
+  explicit Wander(ros::NodeHandle &nh);
+  ~Wander() {}; // Suppress default copy and move constructors
 
   // We're called at 10Hz. Publish a new velocity.
   void spinOnce();
