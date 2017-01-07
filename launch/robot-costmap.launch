@@ -1,0 +1,70 @@
+<launch>
+
+  <!-- Launch base controller -->
+  <node name="driver" pkg="ca_driver" type="ca_driver" output="screen">
+    <!-- <remap from="cmd_vel" to="smooth_cmd_vel" /> -->
+    <rosparam>
+      loop_hz: 30
+      dev: "/dev/ttyUSB0"
+      publish_tf: true
+      create_1: false
+    </rosparam>
+  </node>
+
+  <!-- Load robot description -->
+  <include file="$(find ca_description)/launch/create_2.launch" />
+
+  <!-- Monitor the battery -->
+  <node name="batteryMon" pkg="rodeobot" type="battery_monitor" output="screen" />
+
+  <!-- Include the camera nodes -->
+  <include file="$(find rodeobot)/launch/robot-camera.xml" />
+
+  <!-- Run a single costmap -->
+  <node name="my_costmap" pkg="costmap_2d" type="costmap_2d_node" output="screen">
+    <rosparam>
+ 
+      costmap: #hardcoded name
+
+        robot_radius: 0.20
+        global_frame: /odom
+        robot_base_frame: base_link
+        update_frequency: 4.0
+        publish_frequency: 2.0
+        static_map: false
+        rolling_window: true
+        width: 10.0
+        height: 10.0
+        resolution: 0.05 #x,y resolution
+
+        plugins:
+          - {name: obstacles, type: "costmap_2d::VoxelLayer"}
+          - {name: inflation, type: "costmap_2d::InflationLayer"}
+
+        obstacles:
+          max_obstacle_height: 0.3 #for all sensors
+          z_resolution: 0.2 #default
+          z_voxels: 10 #default
+          z_unknown_threshold: 10 #default
+          mark_threshold: 0 #default
+          publish_voxel_map: true #default is false
+
+          observation_sources: point_cloud_sensor
+          point_cloud_sensor:
+            sensor_frame: camera_link
+            data_type: PointCloud2
+            topic: /camera/depth/points
+            marking: true
+            clearing: true
+            max_obstacle_height: 0.3 #clip above 30cm
+            min_obstacle_height: 0.15 #clip below 5cm
+            obstacle_range: 2.5
+            raytrace_range: 2.5
+
+        inflation:
+          inflation_radius: 0.2
+
+    </rosparam>
+  </node>
+
+</launch>

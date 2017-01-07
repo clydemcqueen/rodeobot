@@ -2,7 +2,7 @@
 
   <!-- Launch base controller -->
   <node name="driver" pkg="ca_driver" type="ca_driver" output="screen">
-    <remap from="cmd_vel" to="smooth_cmd_vel" />
+    <!-- <remap from="cmd_vel" to="smooth_cmd_vel" /> -->
     <rosparam>
       loop_hz: 30
       dev: "/dev/ttyUSB0"
@@ -11,20 +11,25 @@
     </rosparam>
   </node>
 
-  <!-- Launch velocity smoother TODO nodelet, not node! TODO make sure that this works w/ flaky wifi -->
-  <!-- <node name="smoother" pkg="yocs_velocity_smoother" type="yocs_velocity_smoother" output="screen">
-    <remap from="raw_cmd_vel" to="cmd_vel" />
-    <remap from="odometry" to="odom" />
+  <!-- Launch velocity smoother; note that this doesn't like flaky wifi :-( -->
+  <!-- TODO do we need this if we're running move_local_base in the nav stack?? -->
+  <node pkg="nodelet" type="nodelet" name="smooth_manager" args="manager" output="screen" /> <!-- TODO use existing manager -->
+  <!--
+  <node pkg="nodelet" type="nodelet" name="velocity_smoother" args="load yocs_velocity_smoother/VelocitySmootherNodelet smooth_manager" output="screen">
+    <remap from="velocity_smoother/raw_cmd_vel" to="cmd_vel" />
+    <remap from="velocity_smoother/smooth_cmd_vel" to="smooth_cmd_vel" />
+    <remap from="velocity_smoother/odometry" to="odom" />
     <rosparam>
-      speed_lim_v: 0.8
-      speed_lim_w: 5.4
-      accel_lim_v: 1.0
-      accel_lim_w: 2.0
-      frequency: 20.0
+      speed_lim_v: 0.5
+      speed_lim_w: 2.0
+      accel_lim_v: 0.75
+      accel_lim_w: 3.0
+      frequency: 10.0
       decel_factor: 1.5
       robot_feedback: 1 # 0=none, 1=odometry, 2=cmd_vel
     </rosparam>
-  </node> -->
+  </node>
+  -->
 
   <!-- Load robot description -->
   <include file="$(find ca_description)/launch/create_2.launch" />

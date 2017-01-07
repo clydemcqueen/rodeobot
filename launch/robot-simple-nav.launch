@@ -1,0 +1,93 @@
+<launch>
+
+  <!-- Launch base controller -->
+  <node name="driver" pkg="ca_driver" type="ca_driver" output="screen">
+    <!-- <remap from="cmd_vel" to="smooth_cmd_vel" /> -->
+    <rosparam>
+      loop_hz: 30
+      dev: "/dev/ttyUSB0"
+      publish_tf: true
+      create_1: false
+    </rosparam>
+  </node>
+
+  <!-- Load robot description -->
+  <include file="$(find ca_description)/launch/create_2.launch" />
+
+  <!-- Monitor the battery -->
+  <node name="batteryMon" pkg="rodeobot" type="battery_monitor" output="screen" />
+
+  <!-- Include the camera nodes -->
+  <include file="$(find rodeobot)/launch/robot-camera.xml" />
+
+  <!-- Run the navigation control stack -->
+  <node name="move_base" pkg="move_base" type="move_base" respawn="false" output="screen">
+    <rosparam>
+      shutdown_costmaps: false
+      controller_frequency: 5.0
+      controller_patience: 3.0
+      planner_frequency: 1.0
+      planner_patience: 5.0
+      oscillation_timeout: 10.0
+      oscillation_distance: 0.2
+
+      # Use the DWA local planner, vs. the default trajectory rollout
+      base_local_planner: "dwa_local_planner/DWAPlannerROS" #alternative: base_local_planner/TrajectoryPlannerROS
+
+      # Use the default global planner
+      base_global_planner: "navfn/NavfnROS" #alternatives: global_planner/GlobalPlanner, carrot_planner/CarrotPlanner
+
+      DWAPlannerROS:
+        max_vel_x: 0.25
+        min_vel_x: 0.1
+        acc_lim_x: 1.0
+        max_vel_y: 0.0
+        min_vel_y: 0.0
+        acc_lim_y: 0.0
+        acc_lim_th: 2.0
+        min_in_place_vel_theta: 0.4
+        max_vel_theta: 0.75
+        holonomic_robot: false
+        dwa: true
+
+      global_costmap:
+        obstacle_range: 2.5
+        raytrace_range: 2.5
+        robot_radius: 0.30
+        inflation_radius: 0.65
+
+        observation_sources: laser_scan_sensor
+        laser_scan_sensor: {sensor_frame: camera_link, data_type: LaserScan, topic: /scan, marking: true, clearing: true}
+
+        global_frame: odom
+        robot_base_frame: base_link
+        update_frequency: 4.0
+        publish_frequency: 2.0
+        static_map: false
+        rolling_window: true
+        width: 10.0
+        height: 10.0
+        resolution: 0.05
+
+      local_costmap:
+        obstacle_range: 2.5
+        raytrace_range: 2.5
+        robot_radius: 0.30
+        inflation_radius: 0.65
+
+        observation_sources: laser_scan_sensor
+        laser_scan_sensor: {sensor_frame: camera_link, data_type: LaserScan, topic: /scan, marking: true, clearing: true}
+
+        global_frame: odom
+        robot_base_frame: base_link
+        update_frequency: 4.0
+        publish_frequency: 2.0
+        static_map: false
+        rolling_window: true
+        width: 10.0
+        height: 10.0
+        resolution: 0.05
+    </rosparam>
+  </node>
+
+</launch>
