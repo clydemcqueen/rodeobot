@@ -7,7 +7,7 @@
   <!-- Launch RealSense camera nodes -->
   <include file="$(find realsense_camera)/launch/r200_nodelet_rgbd.launch" />
 
-	<!-- Create a new nodelet manager if we need to split the work across cores -->
+	<!-- If we want to create a new nodelet manager -->
   <!-- <node pkg="nodelet" type="nodelet" name="pcl_manager" args="manager" output="screen" /> -->
 
   <!-- Run a VoxelGrid filter to clean NaNs, clip and downsample -->
@@ -17,8 +17,8 @@
       filter_field_name: y # Weird -- looks like /camera/depth/points has z and y flipped?
       filter_limit_min: -0.21 # And it's upside down?
       filter_limit_max: 0.09
-      filter_limit_negative: False
-      leaf_size: 0.05 # Downsample (huge speedup); 0.01 is fine, but slow
+      filter_limit_negative: false
+      leaf_size: 0.03 # Downsample (huge speedup); 0.01 is fine, but slow; 0.05 misses obstacles
     </rosparam>
   </node>
 
@@ -26,53 +26,61 @@
   <node pkg="nodelet" type="nodelet" name="radius_outlier_removal" args="load pcl/RadiusOutlierRemoval camera/camera_nodelet_manager" output="screen">
     <remap from="~input" to="/voxel_grid/output" />
     <rosparam>
-      radius_search: 0.10
+      radius_search: 0.10 # Must have min_neighbors w/in this radius to survive
       min_neighbors: 5
     </rosparam>
   </node>
 
-  <!-- Run a single costmap -->
+  <!-- Run a single local costmap -->
   <node name="my_costmap" pkg="costmap_2d" type="costmap_2d_node" output="screen">
     <rosparam>
  
       costmap: #hardcoded name
 
-        footprint: [[0.2, 0.2], [-0.2, 0.2], [-0.2, -0.2], [0.2, -0.2] ]
-        #robot_radius: 0.20 TODO hmmm... I thought that I could have a round robot, but I get an error if I don't provide at least 3 pts
+        footprint: [[0.15, 0.15], [-0.15, 0.15], [-0.15, -0.15], [0.15, -0.15]] # TODO used for clearing; should make more circle-like
         global_frame: /map
         robot_base_frame: base_link
         update_frequency: 2.0 # How often we read sensors and update the map
         publish_frequency: 1.0 # How often we publish the map
-        static_map: false
-        rolling_window: true
-        width: 10.0
-        height: 10.0
-        resolution: 0.05 #x,y resolution
+        static_map: false # We have no a priori static map
+        rolling_window: true # So, we'll use a rolling window
+        width: 5.0
+        height: 5.0
+        resolution: 0.05 # x,y resolution
 
         plugins:
           - {name: obstacles, type: "costmap_2d::ObstacleLayer"}
           #- {name: obstacles, type: "costmap_2d::VoxelLayer"}
 
         obstacles:
-          max_obstacle_height: 0.3 #for all sensors
-          z_resolution: 0.05
-          z_voxels: 10
-          z_unknown_threshold: 10
-          mark_threshold: 0
-          publish_voxel_map: true
+
+          # For VoxelLayer:
+          origin_z: 0.0 # default 0.0 -- keep it at 0.0 to avoid a bug in the voxel code
+          z_resolution: 0.05 # default 0.2
+          z_voxels: 10 # default 10
+          z_unknown_threshold: 10 # default z_voxels
+          mark_threshold: 0 # default 0
+          publish_voxel_map: true # default false
+
+          # For ObstacleLayer:
+          track_unknown_space: true # Forces 3 states: lethal, empty, unknown vs. 2: lethal, empty; default false -- not quite sure how this'll work
+
+          # For both:
+          footprint_clearing_enabled: true # default true
 
           observation_sources: point_cloud_sensor
+
           point_cloud_sensor:
             sensor_frame: camera_link
             data_type: PointCloud2
             topic: /radius_outlier_removal/output
             marking: true
             clearing: true
-            max_obstacle_height: 0.3 #clip above 30cm
             min_obstacle_height: 0.0
-            obstacle_range: 2.1
-            raytrace_range: 2.5
+            max_obstacle_height: 0.3 # Clip above 30cm
+            obstacle_range: 2.1 # Marking range
+            raytrace_range: 2.5 # Clearing range -- set this to a bit higher than marking to avoid ghost pixels
 
     </rosparam>
   </node>
-</launch> 
+</launch>
