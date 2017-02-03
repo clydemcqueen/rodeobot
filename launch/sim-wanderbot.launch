@@ -1,0 +1,8 @@
+<launch>
+
+  <!-- Wanderbot -->
+  <node name="wanderbot" pkg="rodeobot" type="wanderbot_node" output="screen">
+    <param name="wander_costmap/global_frame" value="/odom" />
+  </node>
+
+</launch>
