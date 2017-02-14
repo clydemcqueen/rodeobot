@@ -1,0 +1,10 @@
+<launch>
+  <node name="rviz" pkg="rviz" type="rviz" />
+
+	<!-- Convert voxel grid to PointCloud, so we can see what's going on -->
+	<node name="voxel_grid_2_point_cloud" pkg="costmap_2d" type="costmap_2d_cloud">
+    <remap from="voxel_grid" to="/wanderbot/wander_costmap/obstacles/voxel_grid"/>
+    <remap from="voxel_marked_cloud" to="/wanderbot/wander_costmap/obstacles/marked_cloud"/>
+    <remap from="voxel_unknown_cloud" to="/wanderbot/wander_costmap/obstacles/unknown_cloud"/>
+  </node>
+</launch>

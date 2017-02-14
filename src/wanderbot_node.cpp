@@ -7,13 +7,9 @@ int main(int argc, char **argv)
   tf::TransformListener tf{nh};
   rodeobot::Wanderbot wander{nh, tf};
 
-  ros::Rate r(10);
-  while (ros::ok())
-  {
-    r.sleep();
-    ros::spinOnce();
-    wander.spinOnce();
-  }
+  ros::Timer timer1 = nh.createTimer(ros::Duration(0.1), &rodeobot::Wanderbot::spinOnce, &wander);
+
+  ros::spin();
 
   return 0;
 }

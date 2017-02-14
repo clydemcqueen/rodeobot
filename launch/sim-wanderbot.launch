@@ -1,8 +1,101 @@
 <launch>
+  <!-- Used for simulating wanderbot. Divided into 3 launches files for convenience:
+        Turtlebot in Gazebo:    roslaunch turtlebot_gazebo turtlebot_world.launch
+        Wanderbot:              roslaunch rodeobot sim-wanderbot.launch
+        Rviz (optional):        roslaunch rodeobot control-wanderbot.launch -->
+
+	<!-- Nodelet manager -->
+  <node pkg="nodelet" type="nodelet" name="pcl_manager" args="manager" output="screen" />
+
+  <!-- Run a VoxelGrid filter to clean NaNs, clip and downsample -->
+  <node pkg="nodelet" type="nodelet" name="voxel_grid" args="load pcl/VoxelGrid pcl_manager" output="screen">
+    <remap from="~input" to="/camera/depth/points" />
+    <rosparam>
+      filter_field_name: y
+      # filter_limit_min: -0.21 # PCL camera test
+      filter_limit_min: -0.4 # Turtlebot base
+      # filter_limit_max: 0.09 # PCL camera test
+      filter_limit_max: 0.3 # Turtlebot base
+      filter_limit_negative: false
+      leaf_size: 0.03 # Downsample (huge speedup); 0.01 is fine, but slow; 0.05 misses obstacles
+    </rosparam>
+  </node>
+
+  <!-- Run a RadiusOutlierRemoval filter to remove outliers -->
+  <node pkg="nodelet" type="nodelet" name="radius_outlier_removal" args="load pcl/RadiusOutlierRemoval pcl_manager" output="screen">
+    <remap from="~input" to="/voxel_grid/output" />
+    <rosparam>
+      radius_search: 0.10 # Must have min_neighbors w/in this radius to survive
+      min_neighbors: 5
+    </rosparam>
+  </node>
 
   <!-- Wanderbot -->
-  <node name="wanderbot" pkg="rodeobot" type="wanderbot_node" output="screen">
-    <param name="wander_costmap/global_frame" value="/odom" />
+  <node launch-prefix="gnome-terminal -x gdb -ex run --args" name="wanderbot" pkg="rodeobot" type="wanderbot_node" output="screen">
+    <rosparam>
+      wander_planner:
+        max_vel_x: 0.5
+        min_vel_x: 0.0
+        acc_lim_x: 1.0
+        max_vel_y: 0.0
+        min_vel_y: 0.0
+        acc_lim_y: 0.0
+        acc_lim_th: 2.0
+        min_in_place_vel_theta: 0.4
+        max_vel_theta: 0.75
+        holonomic_robot: false
+        dwa: true
+        controller_frequency: 10
+        yaw_goal_tolerance: 0.1
+        xy_goal_tolerance: 0.2
+        latch_xy_goal_tolerance: false
+
+      wander_costmap:
+        global_frame: /odom
+        robot_base_frame: base_link
+        robot_radius: 0.50 # Sets the lethal area around the voxel grid points -- use 2X to stay away from walls.
+        update_frequency: 2.0
+        publish_frequency: 1.0
+        static_map: false
+        rolling_window: true
+        width: 10.0
+        height: 10.0
+        resolution: 0.05 #x,y resolution
+
+        plugins:
+          - {name: obstacles, type: "costmap_2d::VoxelLayer"}
+          - {name: inflation, type: "costmap_2d::InflationLayer"}
+
+        obstacles:
+          max_obstacle_height: 0.3 #for all sensors
+          z_resolution: 0.2 #default
+          z_voxels: 10 #default
+          z_unknown_threshold: 10 #default
+          mark_threshold: 0 #default
+          publish_voxel_map: true #default is false
+
+          observation_sources: point_cloud_sensor
+
+          laser_scan_sensor: {sensor_frame: camera_link, data_type: LaserScan, topic: /scan, marking: true, clearing: true}
+
+          point_cloud_sensor:
+            sensor_frame: camera_link
+            data_type: PointCloud2
+            topic: /radius_outlier_removal/output
+            marking: true
+            clearing: true
+            max_obstacle_height: 0.3
+            min_obstacle_height: 0.04
+            obstacle_range: 2.5
+            raytrace_range: 2.5
+
+        inflation:
+          inflation_radius: 1.0 # Sets the gray zone around the lethal area. Doesn't influence dwa_planner much.
+
+    </rosparam>
+
+    <remap from="/wanderbot/cmd_vel" to="/cmd_vel_mux/input/navi" />
+
   </node>
 
 </launch>
