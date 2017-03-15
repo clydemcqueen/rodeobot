@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8.3)
 project(rodeobot)
 
 ## Find packages we need
-find_package(catkin REQUIRED COMPONENTS roslint roscpp rospy std_msgs tf costmap_2d dwa_local_planner)
+find_package(catkin REQUIRED COMPONENTS roslint roscpp rospy std_msgs tf costmap_2d dwa_local_planner ca_msgs)
 find_package(Eigen3 REQUIRED)
 find_package(PCL REQUIRED)
 

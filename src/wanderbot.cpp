@@ -23,7 +23,7 @@ Wanderbot::Wanderbot(ros::NodeHandle &nh, tf::TransformListener &tf):
   auto costmap = costmap_ros_->getCostmap();
   costmap->updateOrigin(costmap->getSizeInMetersX() / -2.0, costmap->getSizeInMetersY() / -2.0);
 
-  // Create our local planner. In ROS terminology, our planners is the global planner.
+  // Create our local planner. In ROS terminology, our planner is the global planner.
   driver_ = new dwa_local_planner::DWAPlannerROS();
   driver_->initialize("wander_planner", &tf_, costmap_ros_); // TODO param name
 
@@ -73,7 +73,12 @@ bool free(costmap_2d::Costmap2D *costmap, int cell_x, int cell_y)
       if (x >= 0 && y >= 0 && x < size_x && y < size_y)
       {
         auto cost = costmap->getCost(x, y);
+#if 0
         if (cost != costmap_2d::NO_INFORMATION && cost != costmap_2d::FREE_SPACE)
+#else
+        // The local planner needs free space, not unknown space TODO fix this?
+        if (cost != costmap_2d::FREE_SPACE)
+#endif
         {
           return false;
         }
@@ -186,31 +191,32 @@ void Wanderbot::spinOnce(const ros::TimerEvent &event)
     case State::plan:
       if (plan(costmap_ros_, plan_))
       {
-        ROS_INFO("New goal found => drive to %f, %f", plan_[1].pose.position.x, plan_[1].pose.position.y);
+        ROS_INFO("New goal found: %f, %f", plan_[1].pose.position.x, plan_[1].pose.position.y);
         driver_->setPlan(plan_);
         state_ = State::drive;
         last_plan_time_ = ros::Time::now();
       }
       else
       {
-        ROS_WARN("Failed to find a new goal => plan again");
+        ROS_WARN("Failed to find a new goal");
+        state_ = State::recover;
       }
       break;
 
     case State::drive:
       if (driver_->isGoalReached())
       {
-        ROS_INFO("Goal reached => plan");
+        ROS_INFO("Goal reached");
         state_ = State::plan;
       }
       else if (last_plan_time_ + ros::Duration(60) < ros::Time::now())
       {
-        ROS_WARN("Timeout => plan");
-        state_ = State::plan;
+        ROS_WARN("Timeout");
+        state_ = State::recover;
       }
       else if (!driver_->computeVelocityCommands(msg))
       {
-        ROS_WARN("Can't move => recover, then plan");
+        ROS_WARN("Can't move");
         state_ = State::recover;
       }
       break;

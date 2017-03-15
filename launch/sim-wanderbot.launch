@@ -53,7 +53,7 @@
       wander_costmap:
         global_frame: /odom
         robot_base_frame: base_link
-        robot_radius: 0.50 # Sets the lethal area around the voxel grid points -- use 2X to stay away from walls.
+        robot_radius: 0.20 # Sets the lethal area around the voxel grid points, and anything inside is cleared
         update_frequency: 2.0
         publish_frequency: 1.0
         static_map: false
@@ -61,18 +61,18 @@
         width: 10.0
         height: 10.0
         resolution: 0.05 #x,y resolution
+        track_unknown_space: true # 3 states: occupied, free, unknown
 
         plugins:
           - {name: obstacles, type: "costmap_2d::VoxelLayer"}
           - {name: inflation, type: "costmap_2d::InflationLayer"}
 
         obstacles:
-          max_obstacle_height: 0.3 #for all sensors
-          z_resolution: 0.2 #default
-          z_voxels: 10 #default
-          z_unknown_threshold: 10 #default
-          mark_threshold: 0 #default
-          publish_voxel_map: true #default is false
+          z_resolution: 0.1
+          z_voxels: 10
+          z_unknown_threshold: 10
+          mark_threshold: 0
+          publish_voxel_map: true
 
           observation_sources: point_cloud_sensor
 
@@ -84,10 +84,10 @@
             topic: /radius_outlier_removal/output
             marking: true
             clearing: true
-            max_obstacle_height: 0.3
-            min_obstacle_height: 0.04
-            obstacle_range: 2.5
-            raytrace_range: 2.5
+            max_obstacle_height: 1.0
+            min_obstacle_height: 0.01
+            obstacle_range: 5.0
+            raytrace_range: 5.0
 
         inflation:
           inflation_radius: 1.0 # Sets the gray zone around the lethal area. Doesn't influence dwa_planner much.
