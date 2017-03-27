@@ -8,13 +8,13 @@
   <node name="w3" pkg="rodeobot" type="w3_node" output="screen">
 
     <rosparam>
-      x_min_vel: 0.2
-      x_max_vel: 0.6
-      x_accel: 1.0
-      r_min_vel: 0.2
+      x_min_vel: 0.05
+      x_max_vel: 0.3
+      x_accel: 0.3
+      r_min_vel: 0.1
       r_max_vel: 1.5
       r_accel: 3.0
-      r_epsilon: 0.05
+      r_epsilon: 0.1
       scan_width: 0.6 # Min width opening on horizon to move forward
       scan_horizon: 2.0 # Any scan values > this are clipped to this; also Nan and Inf
     </rosparam>

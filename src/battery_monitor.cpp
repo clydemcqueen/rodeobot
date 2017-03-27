@@ -62,7 +62,7 @@ void BatteryMonitor::display(int i)
 // Constructor.
 BatteryMonitor::BatteryMonitor(ros::NodeHandle& nh) : voltage_(0), charge_ratio_(0)
 {
-  std::cout << "Rodeobot awake!" << std::endl;
+  std::cout << "Battery monitor waking up" << std::endl;
 
   // Set up publishers.
   set_ascii_pub_ = nh.advertise<std_msgs::UInt8MultiArray>("set_ascii", 1);
@@ -72,7 +72,7 @@ BatteryMonitor::BatteryMonitor(ros::NodeHandle& nh) : voltage_(0), charge_ratio_
   // Subscriptions stop when Subscriber objects go out of scope -- so save them.
   voltage_sub_ = nh.subscribe("battery/voltage", 1, &BatteryMonitor::voltageCallback, this);
   charge_ratio_sub_ = nh.subscribe("battery/charge_ratio", 1, &BatteryMonitor::chargeRatioCallback, this);
-  clean_button_sub_ = nh.subscribe("clean_button", 1, &BatteryMonitor::cleanButtonCallback, this);
+  //clean_button_sub_ = nh.subscribe("clean_button", 1, &BatteryMonitor::cleanButtonCallback, this);
 }
 
 // Handle voltage message. Range should be something like [0.0, ~16.0].

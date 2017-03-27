@@ -9,6 +9,22 @@ namespace rodeobot {
 // Utilities
 //===========================================================================
 
+// Get a parameter from the parameter server, but clip to min & max.
+void getParam(const ros::NodeHandle &nh, const std::string &name, double &val, double min, double max)
+{
+  nh.getParam(name, val);
+  if (val < min)
+  {
+    ROS_WARN("param %s val %f is below min %f", name.c_str(), val, min);
+    val = min;
+  }
+  if (val > max)
+  {
+    ROS_WARN("param %s val %f is above max %f", name.c_str(), val, max);
+    val = max;
+  }
+}
+
 // Return a smooth velocity. Works for +/foward/CCW and -/backward/CW.
 double smooth(double goal, double v, double accel, double min, double max)
 {
@@ -108,7 +124,7 @@ bool isTooClose(const ca_msgs::BumperConstPtr &msg)
 // Laser scan utilities
 //===========================================================================
 
-// Find the widest max/inf/nan arc.
+// Find the widest max/Inf/NaN arc.
 void find(sensor_msgs::LaserScan &scan, float max, int &start, int &width)
 {
   width = 0;
@@ -158,34 +174,46 @@ void draw(sensor_msgs::LaserScan &scan, float max, int start, int width)
 // Wander
 //===========================================================================
 
+// TODO make enum
+#define READY_SONG 0
+#define GO_SONG 1
+#define STOP_SONG 2
+#define ERROR_SONG 3
+
 Wander::Wander(ros::NodeHandle &nh, tf::TransformListener &tf):
   nh_{nh},
   tf_{tf},
   state_{State::start},
-  good_scan_{false}
+  base_awake_{false},
+  laser_awake_{false},
+  x_prev_v_{0.0},
+  r_prev_v_{0.0}
 {
-  nh.getParam("x_min_v", x_min_v_);
-  nh.getParam("x_max_v", x_max_v_);
-  nh.getParam("x_accel", x_accel_);
-  nh.getParam("r_min_v", r_min_v_);
-  nh.getParam("r_max_v", r_max_v_);
-  nh.getParam("r_accel", r_accel_);
-  nh.getParam("r_epsilon", r_epsilon_);
-  nh.getParam("scan_horizon", scan_horizon_);
-  nh.getParam("scan_width", scan_width_);
+  getParam(nh, "x_min_v", x_min_v_, 0.0, 0.5);
+  getParam(nh, "x_max_v", x_max_v_, 0.3, 5.0);
+  getParam(nh, "x_accel", x_accel_, 0.5, 5.0);
+  getParam(nh, "r_min_v", r_min_v_, 0.0, 0.5);
+  getParam(nh, "r_max_v", r_max_v_, 0.4, 5.0);
+  getParam(nh, "r_accel", r_accel_, 0.5, 5.0);
+  getParam(nh, "r_epsilon", r_epsilon_, 0.01, r_accel_ / 10 - 0.001);
+  getParam(nh, "scan_horizon", scan_horizon_, 0.5, 10.0);
+  getParam(nh, "scan_width", scan_width_, 0.1, 1.0);
 
-  cmd_vel_pub_ = nh.advertise<geometry_msgs::Twist>("cmd_vel", 1);
-  laser_pub_ = nh.advertise<sensor_msgs::LaserScan>("scan1", 1);
+  // Set up publishers
+  cmd_vel_pub_ = nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1);
+  define_song_pub_ = nh.advertise<ca_msgs::DefineSong>("/define_song", 5); // Queue = 5
+  laser_pub_ = nh.advertise<sensor_msgs::LaserScan>("/scan1", 1);
+  play_song_pub_ = nh.advertise<ca_msgs::PlaySong>("/play_song", 5); // Queue = 5
+
+  // Subscribe to camera (laser) messages
   laser_sub_ = nh.subscribe("/scan", 1, &Wander::laserCallback, this);
-  bumper_sub_ = nh.subscribe("/bumper", 1, &Wander::bumperCallback, this);
-  wheeldrop_sub_ = nh.subscribe("/wheeldrop", 1, &Wander::wheeldropCallback, this);
-}
 
-void Wander::emergencyStop()
-{
-  geometry_msgs::Twist msg;
-  cmd_vel_pub_.publish(msg);
-  state_ = State::emergency_stop;
+  // Subscribe to Create2 base messages
+  bumper_sub_ = nh.subscribe("/bumper", 1, &Wander::bumperCallback, this);
+  day_button_sub_ = nh.subscribe("/day_button", 1, &Wander::dayButtonCallback, this);
+  minute_button_sub_ = nh.subscribe("/minute_button", 1, &Wander::minuteButtonCallback, this);
+  mode_sub_ = nh.subscribe("/mode", 1, &Wander::modeCallback, this);
+  wheeldrop_sub_ = nh.subscribe("/wheeldrop", 1, &Wander::wheeldropCallback, this);
 }
 
 void Wander::laserCallback(const sensor_msgs::LaserScanConstPtr &msg)
@@ -195,20 +223,112 @@ void Wander::laserCallback(const sensor_msgs::LaserScanConstPtr &msg)
   {
     scan_ = *msg;
     scan_mutex_.unlock();
-    good_scan_ = true;
+    laser_awake_ = true;
   }
 }
 
 void Wander::bumperCallback(const ca_msgs::BumperConstPtr &msg)
 {
-  if (state_ != State::emergency_stop && (isCollision(msg) || isTooClose(msg)))
+  //if (state_ != State::pause && (isCollision(msg) || isTooClose(msg)))
+  if (state_ != State::pause && isCollision(msg))
+  {
     emergencyStop();
+  }
 }
 
 void Wander::wheeldropCallback(const std_msgs::EmptyConstPtr &msg)
 {
-  ROS_WARN("[WANDER] Wheel drop");
-  emergencyStop();
+  if (state_ != State::pause)
+  {
+    ROS_WARN("[WANDER] Wheel drop");
+    emergencyStop();
+  }
+}
+
+void Wander::dayButtonCallback(const std_msgs::EmptyConstPtr &msg)
+{
+  if (state_ != State::pause)
+  {
+    ROS_WARN("[WANDER] Day button: stop");
+    playSong(STOP_SONG);
+    state_ = State::pause;
+    x_prev_v_ = 0.0; // Need this so we don't re-start too fast TODO possibly refactor
+    r_prev_v_ = 0.0;
+  }
+}
+
+void Wander::minuteButtonCallback(const std_msgs::EmptyConstPtr &msg)
+{
+  if (state_ == State::pause)
+  {
+    ROS_WARN("[WANDER] Minute button: go");
+    playSong(GO_SONG);
+    state_ = State::drive;
+  }
+}
+
+#define C3 60
+#define D3 62
+#define E3 64
+#define F3 65
+#define G3 67
+#define A3 69
+#define B3 71
+#define C4 72
+
+// defineSong(TEST, {{36, 0.25}, {38, 0.25}, {40, 0.25}, {41, 0.25}, {43, 0.25}, {45, 0.25}, {47, 0.25}, {48, 0.25}});
+// defineSong(TEST, {{48, 0.25}, {50, 0.25}, {52, 0.25}, {53, 0.25}, {55, 0.25}, {57, 0.25}, {59, 0.25}, {60, 0.25}});
+// defineSong(TEST, {{72, 0.25}, {74, 0.25}, {76, 0.25}, {77, 0.25}, {79, 0.25}, {81, 0.25}, {83, 0.25}, {84, 0.25}});
+// defineSong(TEST, {{84, 0.25}, {86, 0.25}, {88, 0.25}, {89, 0.25}, {91, 0.25}, {93, 0.25}, {95, 0.25}, {96, 0.25}});
+// defineSong(TEST, {{60, 0.25}, {62, 0.25}, {64, 0.25}, {65, 0.25}, {67, 0.25}, {69, 0.25}, {71, 0.25}, {72, 0.25}});
+
+void Wander::modeCallback(const ca_msgs::ModeConstPtr &msg)
+{
+  if (!base_awake_)
+  {
+    // Define our songs.
+    defineSong(READY_SONG, {{C3, 0.25}, {E3, 0.25}, {G3, 0.25}});
+    defineSong(GO_SONG,    {{E3, 0.25}, {G3, 0.25}});
+    defineSong(STOP_SONG,  {{G3, 0.25}, {E3, 0.25}});
+    defineSong(ERROR_SONG, {{G3, 0.25}, {E3, 0.25}, {C3, 0.25}});
+
+    base_awake_ = true;
+  }
+}
+
+void Wander::defineSong(int num, Song song)
+{
+  ROS_INFO("Define song %d", num);
+  ca_msgs::DefineSong msg;
+  msg.song = num;
+  msg.length = song.size();
+  for (int i = 0; i < song.size(); ++i)
+  {
+    msg.notes.push_back(song[i].note);
+    msg.durations.push_back(song[i].duration);
+  }
+  define_song_pub_.publish(msg);
+}
+
+void Wander::playSong(int num)
+{
+  ROS_INFO("Play song %d", num);
+  ca_msgs::PlaySong msg;
+  msg.song = num;
+  play_song_pub_.publish(msg);
+}
+
+void Wander::emergencyStop()
+{
+  playSong(ERROR_SONG);
+
+  // Stop quickly
+  geometry_msgs::Twist msg;
+  cmd_vel_pub_.publish(msg);
+
+  state_ = State::pause;
+  x_prev_v_ = 0.0;
+  r_prev_v_ = 0.0;
 }
 
 void Wander::spinOnce(const ros::TimerEvent &event)
@@ -219,13 +339,15 @@ void Wander::spinOnce(const ros::TimerEvent &event)
   if (event.profile.last_duration.toSec() > 1.0 / SPIN_RATE)
     ROS_WARN("Last event took %f wall seconds too long", event.profile.last_duration.toSec() - 1.0 / SPIN_RATE);
 
-  if (state_ == State::emergency_stop)
+  if (state_ == State::start && base_awake_ && laser_awake_)
+  {
+    ROS_INFO("W3 awake!");
+    playSong(READY_SONG);
+    state_ = State::pause; // Wait for a human to hit the "go" button
     return;
+  }
 
-  if (state_ == State::start && good_scan_)
-    state_ = State::drive;
-
-  if (state_ == State::start)
+  if (state_ == State::start || state_ == State::pause)
     return;
 
   // Find the widest arc.
@@ -261,11 +383,11 @@ void Wander::spinOnce(const ros::TimerEvent &event)
 
 void Wander::driveMotion(int arc_start, int arc_width, double &x_target_v, double &r_target_v)
 {
-  double arc_d = std::sin(arc_width / 2 * scan_.angle_increment) * scan_horizon_;
+  double arc_d = std::sin(arc_width / 2 * scan_.angle_increment) * scan_horizon_ * 2;
 
   if (arc_d < scan_width_)
   {
-    ROS_WARN("Too small! %f", arc_d);
+    ROS_WARN("Arc too small %f vs. %f, recover", arc_d, scan_width_);
     state_ = State::recover;
   }
   else
@@ -288,7 +410,7 @@ void Wander::recoverMotion(int arc_start, int arc_width, double &x_target_v, dou
 {
   if (arc_width == scan_.ranges.size())
   {
-    ROS_WARN("Drive!");
+    ROS_WARN("Full arc, drive");
     dir_ = Direction::none;
     state_ = State::drive;
   }
