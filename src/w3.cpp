@@ -344,10 +344,9 @@ void Wander::spinOnce(const ros::TimerEvent &event)
     ROS_INFO("W3 awake!");
     playSong(READY_SONG);
     state_ = State::pause; // Wait for a human to hit the "go" button
-    return;
   }
 
-  if (state_ == State::start || state_ == State::pause)
+  if (state_ == State::start)
     return;
 
   // Find the widest arc.
@@ -361,10 +360,12 @@ void Wander::spinOnce(const ros::TimerEvent &event)
   }
   scan_mutex_.unlock();
 
-  double x_target_v = 0.0;
-  double r_target_v = 0.0;
+  if (state_ == State::pause)
+    return;
 
   // Calculate our motion.
+  double x_target_v = 0.0;
+  double r_target_v = 0.0;
   if (state_ == State::drive)
     driveMotion(arc_start, arc_width, x_target_v, r_target_v);
   else
