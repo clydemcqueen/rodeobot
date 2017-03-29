@@ -8,7 +8,7 @@
 
   <!-- Simulate a laser scanner -->
   <node name="cloud2scan" pkg="depthimage_to_laserscan" type="depthimage_to_laserscan">
-    <remap from="image" to="camera/depth/image_rect" />
+    <remap from="image" to="camera/depth/image" />
     <param name="~scan_height" value="10" />
     <param name="~output_frame_id" value="camera_link" /> <!-- Important! -->
   </node>
