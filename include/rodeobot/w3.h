@@ -43,6 +43,13 @@ struct Note
 
 typedef std::vector<Note> Song;
 
+struct LightSensor
+{
+  uint16_t threshold;
+  double start;
+  double end;
+};
+
 class Wander
 {
 private:
@@ -59,6 +66,13 @@ private:
   Direction dir_{Direction::none};  // Current direction (drive, recover)
   double x_prev_v_;                 // Previous forward velocity (drive)
   double r_prev_v_;                 // Previous rotational velocity (drive, recover)
+
+  bool close_left_;
+  bool close_front_left_;
+  bool close_center_left_;
+  bool close_center_right_;
+  bool close_front_right_;
+  bool close_right_;
 
   // Laser (camera) subscription
   ros::Subscriber laser_sub_;
@@ -83,7 +97,8 @@ private:
   // Publications
   ros::Publisher cmd_vel_pub_;
   ros::Publisher define_song_pub_;
-  ros::Publisher laser_pub_;
+  ros::Publisher laser1_pub_;
+  ros::Publisher laser2_pub_;
   ros::Publisher play_song_pub_;
 
   // Methods

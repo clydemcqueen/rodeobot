@@ -3,7 +3,17 @@
 
 namespace rodeobot {
 
-// TODO add turtlebot bumpers
+//===========================================================================
+// Globals
+//===========================================================================
+
+// TODO calibrate these
+static LightSensor g_sensor_right         {80, -90.0/180 * M_PI, -60.0/180 * M_PI};
+static LightSensor g_sensor_front_right   {80, -60.0/180 * M_PI, -30.0/180 * M_PI};
+static LightSensor g_sensor_center_right  {80, -30.0/180 * M_PI,   0.0/180 * M_PI};
+static LightSensor g_sensor_center_left   {80,   0.0/180 * M_PI,  30.0/180 * M_PI};
+static LightSensor g_sensor_front_left    {80,  30.0/180 * M_PI,  60.0/180 * M_PI};
+static LightSensor g_sensor_left          {80,  60.0/180 * M_PI,  90.0/180 * M_PI};
 
 //===========================================================================
 // Utilities
@@ -170,6 +180,17 @@ void draw(sensor_msgs::LaserScan &scan, float max, int start, int width)
     scan.ranges[i] = (i >= start && i < start + width) ?  max : NAN;
 }
 
+// Draw an arc so we can see it in rviz. Scan must be initialized!
+void draw(sensor_msgs::LaserScan &scan, float max, LightSensor &sensor)
+{
+  int start = (sensor.start - scan.angle_min) / scan.angle_increment;
+  int end = (sensor.end - scan.angle_min) / scan.angle_increment;
+
+  for (int i = 0; i < scan.ranges.size(); ++i)
+    if (i >= start && i < end)
+      scan.ranges[i] = max;
+}
+
 //===========================================================================
 // Wander
 //===========================================================================
@@ -202,7 +223,8 @@ Wander::Wander(ros::NodeHandle &nh, tf::TransformListener &tf):
   // Set up publishers
   cmd_vel_pub_ = nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1);
   define_song_pub_ = nh.advertise<ca_msgs::DefineSong>("/define_song", 5); // Queue = 5
-  laser_pub_ = nh.advertise<sensor_msgs::LaserScan>("/scan1", 1);
+  laser1_pub_ = nh.advertise<sensor_msgs::LaserScan>("/scan1", 1);
+  laser2_pub_ = nh.advertise<sensor_msgs::LaserScan>("/scan2", 1);
   play_song_pub_ = nh.advertise<ca_msgs::PlaySong>("/play_song", 5); // Queue = 5
 
   // Subscribe to camera (laser) messages
@@ -229,8 +251,21 @@ void Wander::laserCallback(const sensor_msgs::LaserScanConstPtr &msg)
 
 void Wander::bumperCallback(const ca_msgs::BumperConstPtr &msg)
 {
-  //if (state_ != State::pause && (isCollision(msg) || isTooClose(msg)))
-  if (state_ != State::pause && isCollision(msg))
+  close_right_        = msg->light_signal_right        > g_sensor_right.threshold;
+  close_front_right_  = msg->light_signal_front_right  > g_sensor_front_right.threshold;
+  close_center_right_ = msg->light_signal_center_right > g_sensor_center_right.threshold;
+  close_center_left_  = msg->light_signal_center_left  > g_sensor_center_left.threshold;
+  close_front_left_   = msg->light_signal_front_left   > g_sensor_front_left.threshold;
+  close_left_         = msg->light_signal_left         > g_sensor_left.threshold;
+
+#if 0
+  printf("L:%d FL:%d CL:%d R:%d FR:%d CR:%d\r",
+      close_left_, close_front_left_, close_center_left_,
+      close_center_right_, close_front_right_, close_right_);
+#endif
+
+  if (state_ != State::pause && (isCollision(msg) || isTooClose(msg)))
+  //if (state_ != State::pause && isCollision(msg))
   {
     emergencyStop();
   }
@@ -349,16 +384,46 @@ void Wander::spinOnce(const ros::TimerEvent &event)
   if (state_ == State::start)
     return;
 
-  // Find the widest arc.
+  // Lock scan message.
   scan_mutex_.lock();
+
+  // Find the widest arc.
   int arc_start, arc_width;
   find(scan_, scan_horizon_, arc_start, arc_width);
   if (arc_width > 0)
   {
+    // Draw the arc for rviz.
     draw(scan_, scan_horizon_, arc_start, arc_width);
-    laser_pub_.publish(scan_);
   }
+
+  // Publish and unlock scan message.
+  laser1_pub_.publish(scan_);
   scan_mutex_.unlock();
+
+  // Draw the IR signals for rviz.
+#define RANGES_SIZE 100
+  sensor_msgs::LaserScan scan2;
+  scan2.header.frame_id = scan_.header.frame_id;
+  scan2.angle_min = g_sensor_right.start;
+  scan2.angle_max = g_sensor_left.end;
+  scan2.angle_increment = (g_sensor_left.end - g_sensor_right.start) / RANGES_SIZE;
+  scan2.time_increment = 0.0;
+  scan2.range_min = 0.1;
+  scan2.range_max = 10.0;
+  scan2.ranges.assign(RANGES_SIZE, NAN);
+  if (close_right_) 
+    draw(scan2, 0.2, g_sensor_right);
+  if (close_front_right_) 
+    draw(scan2, 0.2, g_sensor_front_right);
+  if (close_center_right_) 
+    draw(scan2, 0.2, g_sensor_center_right);
+  if (close_center_left_) 
+    draw(scan2, 0.2, g_sensor_center_left);
+  if (close_front_left_) 
+    draw(scan2, 0.2, g_sensor_front_left);
+  if (close_left_) 
+    draw(scan2, 0.2, g_sensor_left);
+  laser2_pub_.publish(scan2);
 
   if (state_ == State::pause)
     return;
@@ -374,7 +439,7 @@ void Wander::spinOnce(const ros::TimerEvent &event)
   // Smooth the motion.
   x_prev_v_ = smooth(x_target_v, x_prev_v_, x_accel_, x_min_v_, x_max_v_);
   r_prev_v_ = smooth(r_target_v, r_prev_v_, r_accel_, r_min_v_, r_max_v_);
-  
+
   // Publish a velocity command.
   geometry_msgs::Twist twist;
   twist.linear.x = x_prev_v_;
