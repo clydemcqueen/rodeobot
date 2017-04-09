@@ -145,37 +145,41 @@ void find(sensor_msgs::LaserScan &scan, float max, int &start, int &width)
 
   for (int i = 0; i < scan.ranges.size() + 1; ++i) // Note: size()+1 iterations
   {
-    if ((i < scan.ranges.size()) && (std::isinf(scan.ranges[i]) || std::isnan(scan.ranges[i]) || scan.ranges[i] >= max))
+    if ((i < scan.ranges.size()) && (std::isinf(scan.ranges[i]) || std::isnan(scan.ranges[i]) || scan.ranges[i] > max))
     {
       // In an arc
       if (current_start < 0)
       {
-        current_start = i; // Start a new arc
+        // Start a new arc
+        current_start = i;
       }
     }
     else 
     {
-      // Not in an arc
+      // Just past the end, or not in an arc
       if (current_start >= 0)
       {
         // Examine the arc that just ended
         if (i - current_start > width)
         {
+          // Best arc so far
           start = current_start;
           width = i - current_start;
         }
+
+        // End the arc
         current_start = -1;
       }
     }
   }
-
-  // ROS_INFO("size %lu start %d width %d min %f max %f inc %f", scan.ranges.size(), start, width, 
-  //   scan.angle_min, scan.angle_max, scan.angle_increment);
 }
 
 // Draw an arc so we can see it in rviz.
 void draw(sensor_msgs::LaserScan &scan, float max, int start, int width)
 {
+  if (width <= 0)
+    return;
+
   for (int i = 0; i < scan.ranges.size(); ++i)
     scan.ranges[i] = (i >= start && i < start + width) ?  max : NAN;
 }
@@ -202,6 +206,7 @@ void draw(sensor_msgs::LaserScan &scan, float max, LightSensor &sensor)
 #define ERROR_SONG 3
 
 Wander::Wander(ros::NodeHandle &nh, tf::TransformListener &tf):
+  create_base_{true},
   nh_{nh},
   tf_{tf},
   state_{State::start},
@@ -210,6 +215,7 @@ Wander::Wander(ros::NodeHandle &nh, tf::TransformListener &tf):
   x_prev_v_{0.0},
   r_prev_v_{0.0}
 {
+  nh.getParam("create_base", create_base_);
   getParam(nh, "x_min_v", x_min_v_, 0.0, 0.5);
   getParam(nh, "x_max_v", x_max_v_, 0.3, 5.0);
   getParam(nh, "x_accel", x_accel_, 0.5, 5.0);
@@ -222,20 +228,26 @@ Wander::Wander(ros::NodeHandle &nh, tf::TransformListener &tf):
 
   // Set up publishers
   cmd_vel_pub_ = nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1);
-  define_song_pub_ = nh.advertise<ca_msgs::DefineSong>("/define_song", 5); // Queue = 5
   laser1_pub_ = nh.advertise<sensor_msgs::LaserScan>("/scan1", 1);
   laser2_pub_ = nh.advertise<sensor_msgs::LaserScan>("/scan2", 1);
-  play_song_pub_ = nh.advertise<ca_msgs::PlaySong>("/play_song", 5); // Queue = 5
+  if (create_base_)
+  {
+    define_song_pub_ = nh.advertise<ca_msgs::DefineSong>("/define_song", 5); // Queue = 5
+    play_song_pub_ = nh.advertise<ca_msgs::PlaySong>("/play_song", 5); // Queue = 5
+  }
 
   // Subscribe to camera (laser) messages
   laser_sub_ = nh.subscribe("/scan", 1, &Wander::laserCallback, this);
 
   // Subscribe to Create2 base messages
-  bumper_sub_ = nh.subscribe("/bumper", 1, &Wander::bumperCallback, this);
-  day_button_sub_ = nh.subscribe("/day_button", 1, &Wander::dayButtonCallback, this);
-  minute_button_sub_ = nh.subscribe("/minute_button", 1, &Wander::minuteButtonCallback, this);
-  mode_sub_ = nh.subscribe("/mode", 1, &Wander::modeCallback, this);
-  wheeldrop_sub_ = nh.subscribe("/wheeldrop", 1, &Wander::wheeldropCallback, this);
+  if (create_base_)
+  {
+    bumper_sub_ = nh.subscribe("/bumper", 1, &Wander::bumperCallback, this);
+    day_button_sub_ = nh.subscribe("/day_button", 1, &Wander::dayButtonCallback, this);
+    minute_button_sub_ = nh.subscribe("/minute_button", 1, &Wander::minuteButtonCallback, this);
+    mode_sub_ = nh.subscribe("/mode", 1, &Wander::modeCallback, this);
+    wheeldrop_sub_ = nh.subscribe("/wheeldrop", 1, &Wander::wheeldropCallback, this);
+  }
 }
 
 void Wander::laserCallback(const sensor_msgs::LaserScanConstPtr &msg)
@@ -246,6 +258,10 @@ void Wander::laserCallback(const sensor_msgs::LaserScanConstPtr &msg)
     scan_ = *msg;
     scan_mutex_.unlock();
     laser_awake_ = true;
+
+    // If we're running on a turtlebot base, use this as a sign that the base is awake, too.
+    if(!create_base_)
+      base_awake_ = true;
   }
 }
 
@@ -258,11 +274,9 @@ void Wander::bumperCallback(const ca_msgs::BumperConstPtr &msg)
   close_front_left_   = msg->light_signal_front_left   > g_sensor_front_left.threshold;
   close_left_         = msg->light_signal_left         > g_sensor_left.threshold;
 
-#if 0
-  printf("L:%d FL:%d CL:%d R:%d FR:%d CR:%d\r",
-      close_left_, close_front_left_, close_center_left_,
-      close_center_right_, close_front_right_, close_right_);
-#endif
+  // printf("L:%d FL:%d CL:%d R:%d FR:%d CR:%d\r",
+  //    close_left_, close_front_left_, close_center_left_,
+  //    close_center_right_, close_front_right_, close_right_);
 
   if (state_ != State::pause && (isCollision(msg) || isTooClose(msg)))
   //if (state_ != State::pause && isCollision(msg))
@@ -284,7 +298,7 @@ void Wander::dayButtonCallback(const std_msgs::EmptyConstPtr &msg)
 {
   if (state_ != State::pause)
   {
-    ROS_WARN("[WANDER] Day button: stop");
+    ROS_INFO("[WANDER] Day button: stop");
     playSong(STOP_SONG);
     state_ = State::pause;
     x_prev_v_ = 0.0; // Need this so we don't re-start too fast TODO possibly refactor
@@ -296,7 +310,7 @@ void Wander::minuteButtonCallback(const std_msgs::EmptyConstPtr &msg)
 {
   if (state_ == State::pause)
   {
-    ROS_WARN("[WANDER] Minute button: go");
+    ROS_INFO("[WANDER] Minute button: go");
     playSong(GO_SONG);
     state_ = State::drive;
   }
@@ -347,10 +361,13 @@ void Wander::defineSong(int num, Song song)
 
 void Wander::playSong(int num)
 {
-  ROS_INFO("Play song %d", num);
-  ca_msgs::PlaySong msg;
-  msg.song = num;
-  play_song_pub_.publish(msg);
+  if (create_base_)
+  {
+    ROS_INFO("Play song %d", num);
+    ca_msgs::PlaySong msg;
+    msg.song = num;
+    play_song_pub_.publish(msg);
+  }
 }
 
 void Wander::emergencyStop()
@@ -366,6 +383,8 @@ void Wander::emergencyStop()
   r_prev_v_ = 0.0;
 }
 
+#define RANGES_SIZE 100
+
 void Wander::spinOnce(const ros::TimerEvent &event)
 {
   if ((event.current_real - event.current_expected).toSec() > 2.0 / SPIN_RATE)
@@ -378,55 +397,64 @@ void Wander::spinOnce(const ros::TimerEvent &event)
   {
     ROS_INFO("W3 awake!");
     playSong(READY_SONG);
-    state_ = State::pause; // Wait for a human to hit the "go" button
+    if (create_base_)
+    {
+      state_ = State::pause; // Wait for a human to hit the "go" button
+    }
+    else
+    {
+      state_ = State::drive; // Start driving
+    }
   }
 
   if (state_ == State::start)
     return;
 
-  // Lock scan message.
+  // Lock the scan.
   scan_mutex_.lock();
 
   // Find the widest arc.
   int arc_start, arc_width;
   find(scan_, scan_horizon_, arc_start, arc_width);
-  if (arc_width > 0)
+
+  // Draw the arc for rviz.
+  sensor_msgs::LaserScan scan1 = scan_; // TODO copy work?
+  draw(scan1, scan_horizon_, arc_start, arc_width);
+  laser1_pub_.publish(scan1);
+
+  if (create_base_)
   {
-    // Draw the arc for rviz.
-    draw(scan_, scan_horizon_, arc_start, arc_width);
+    // Draw the IR signals for rviz.
+    sensor_msgs::LaserScan scan2;
+    scan2.header.frame_id = scan_.header.frame_id;
+    scan2.angle_min = g_sensor_right.start;
+    scan2.angle_max = g_sensor_left.end;
+    scan2.angle_increment = (g_sensor_left.end - g_sensor_right.start) / RANGES_SIZE;
+    scan2.time_increment = 0.0;
+    scan2.range_min = 0.1;
+    scan2.range_max = 10.0;
+    scan2.ranges.assign(RANGES_SIZE, NAN);
+    if (close_right_) 
+      draw(scan2, 0.2, g_sensor_right);
+    if (close_front_right_) 
+      draw(scan2, 0.2, g_sensor_front_right);
+    if (close_center_right_) 
+      draw(scan2, 0.2, g_sensor_center_right);
+    if (close_center_left_) 
+      draw(scan2, 0.2, g_sensor_center_left);
+    if (close_front_left_) 
+      draw(scan2, 0.2, g_sensor_front_left);
+    if (close_left_) 
+      draw(scan2, 0.2, g_sensor_left);
+    laser2_pub_.publish(scan2);
   }
 
-  // Publish and unlock scan message.
-  laser1_pub_.publish(scan_);
-  scan_mutex_.unlock();
-
-  // Draw the IR signals for rviz.
-#define RANGES_SIZE 100
-  sensor_msgs::LaserScan scan2;
-  scan2.header.frame_id = scan_.header.frame_id;
-  scan2.angle_min = g_sensor_right.start;
-  scan2.angle_max = g_sensor_left.end;
-  scan2.angle_increment = (g_sensor_left.end - g_sensor_right.start) / RANGES_SIZE;
-  scan2.time_increment = 0.0;
-  scan2.range_min = 0.1;
-  scan2.range_max = 10.0;
-  scan2.ranges.assign(RANGES_SIZE, NAN);
-  if (close_right_) 
-    draw(scan2, 0.2, g_sensor_right);
-  if (close_front_right_) 
-    draw(scan2, 0.2, g_sensor_front_right);
-  if (close_center_right_) 
-    draw(scan2, 0.2, g_sensor_center_right);
-  if (close_center_left_) 
-    draw(scan2, 0.2, g_sensor_center_left);
-  if (close_front_left_) 
-    draw(scan2, 0.2, g_sensor_front_left);
-  if (close_left_) 
-    draw(scan2, 0.2, g_sensor_left);
-  laser2_pub_.publish(scan2);
-
+  // If we're paused, we're done.
   if (state_ == State::pause)
+  {
+    scan_mutex_.unlock(); // TODO switch to a diff't mutex mech to increase robustness
     return;
+  }
 
   // Calculate our motion.
   double x_target_v = 0.0;
@@ -445,6 +473,9 @@ void Wander::spinOnce(const ros::TimerEvent &event)
   twist.linear.x = x_prev_v_;
   twist.angular.z = r_prev_v_;
   cmd_vel_pub_.publish(twist);
+
+  // Unlock the scan.
+  scan_mutex_.unlock();
 }
 
 void Wander::driveMotion(int arc_start, int arc_width, double &x_target_v, double &r_target_v)
@@ -453,7 +484,7 @@ void Wander::driveMotion(int arc_start, int arc_width, double &x_target_v, doubl
 
   if (arc_d < scan_width_)
   {
-    ROS_WARN("Arc too small %f vs. %f, recover", arc_d, scan_width_);
+    ROS_INFO("Arc too small %f vs. %f, recover", arc_d, scan_width_);
     state_ = State::recover;
   }
   else
@@ -476,7 +507,7 @@ void Wander::recoverMotion(int arc_start, int arc_width, double &x_target_v, dou
 {
   if (arc_width == scan_.ranges.size())
   {
-    ROS_WARN("Full arc, drive");
+    ROS_INFO("Full arc, drive");
     dir_ = Direction::none;
     state_ = State::drive;
   }

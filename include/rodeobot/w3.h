@@ -56,6 +56,8 @@ private:
   ros::NodeHandle &nh_;
   tf::TransformListener &tf_;
 
+  bool create_base_;                // True if we're running on a create_autonomy base
+
   bool base_awake_;                 // We've seen at least one message from the Create2 base
   bool laser_awake_;                // We've seen at least one message from the laser (camera)
 
