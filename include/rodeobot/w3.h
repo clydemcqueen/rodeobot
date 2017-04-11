@@ -104,6 +104,7 @@ private:
   ros::Publisher play_song_pub_;
 
   // Methods
+  bool isClose();
   void defineSong(int num, Song song);
   void playSong(int num);
   void emergencyStop();

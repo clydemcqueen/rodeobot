@@ -7,13 +7,12 @@ namespace rodeobot {
 // Globals
 //===========================================================================
 
-// TODO calibrate these
-static LightSensor g_sensor_right         {80, -90.0/180 * M_PI, -60.0/180 * M_PI};
-static LightSensor g_sensor_front_right   {80, -60.0/180 * M_PI, -30.0/180 * M_PI};
-static LightSensor g_sensor_center_right  {80, -30.0/180 * M_PI,   0.0/180 * M_PI};
-static LightSensor g_sensor_center_left   {80,   0.0/180 * M_PI,  30.0/180 * M_PI};
-static LightSensor g_sensor_front_left    {80,  30.0/180 * M_PI,  60.0/180 * M_PI};
-static LightSensor g_sensor_left          {80,  60.0/180 * M_PI,  90.0/180 * M_PI};
+static LightSensor g_sensor_right         {50, -68.0/180 * M_PI, -58.0/180 * M_PI};
+static LightSensor g_sensor_front_right   {50, -50.0/180 * M_PI, -40.0/180 * M_PI};
+static LightSensor g_sensor_center_right  {50, -16.0/180 * M_PI,  -6.0/180 * M_PI};
+static LightSensor g_sensor_center_left   {50,  -5.0/180 * M_PI,   5.0/180 * M_PI};
+static LightSensor g_sensor_front_left    {50,  14.0/180 * M_PI,  24.0/180 * M_PI};
+static LightSensor g_sensor_left          {50,  33.0/180 * M_PI,  43.0/180 * M_PI};
 
 //===========================================================================
 // Utilities
@@ -278,8 +277,8 @@ void Wander::bumperCallback(const ca_msgs::BumperConstPtr &msg)
   //    close_left_, close_front_left_, close_center_left_,
   //    close_center_right_, close_front_right_, close_right_);
 
-  if (state_ != State::pause && (isCollision(msg) || isTooClose(msg)))
-  //if (state_ != State::pause && isCollision(msg))
+  //if (state_ != State::pause && (isCollision(msg) || isTooClose(msg)))
+  if (state_ != State::pause && isCollision(msg))
   {
     emergencyStop();
   }
@@ -418,7 +417,7 @@ void Wander::spinOnce(const ros::TimerEvent &event)
   find(scan_, scan_horizon_, arc_start, arc_width);
 
   // Draw the arc for rviz.
-  sensor_msgs::LaserScan scan1 = scan_; // TODO copy work?
+  sensor_msgs::LaserScan scan1 = scan_;
   draw(scan1, scan_horizon_, arc_start, arc_width);
   laser1_pub_.publish(scan1);
 
@@ -435,17 +434,17 @@ void Wander::spinOnce(const ros::TimerEvent &event)
     scan2.range_max = 10.0;
     scan2.ranges.assign(RANGES_SIZE, NAN);
     if (close_right_) 
-      draw(scan2, 0.2, g_sensor_right);
+      draw(scan2, 0.25, g_sensor_right);
     if (close_front_right_) 
-      draw(scan2, 0.2, g_sensor_front_right);
+      draw(scan2, 0.25, g_sensor_front_right);
     if (close_center_right_) 
-      draw(scan2, 0.2, g_sensor_center_right);
+      draw(scan2, 0.25, g_sensor_center_right);
     if (close_center_left_) 
-      draw(scan2, 0.2, g_sensor_center_left);
+      draw(scan2, 0.25, g_sensor_center_left);
     if (close_front_left_) 
-      draw(scan2, 0.2, g_sensor_front_left);
+      draw(scan2, 0.25, g_sensor_front_left);
     if (close_left_) 
-      draw(scan2, 0.2, g_sensor_left);
+      draw(scan2, 0.25, g_sensor_left);
     laser2_pub_.publish(scan2);
   }
 
@@ -478,51 +477,63 @@ void Wander::spinOnce(const ros::TimerEvent &event)
   scan_mutex_.unlock();
 }
 
+// TODO inline?
+bool Wander::isClose()
+{
+  return close_right_ || close_front_right_ || close_center_right_ || close_center_left_ || close_front_left_ || close_left_;
+}
+
 void Wander::driveMotion(int arc_start, int arc_width, double &x_target_v, double &r_target_v)
 {
+  if (isClose())
+  {
+    ROS_INFO("Too close, recover");
+    state_ = State::recover;
+    return;
+  }
+  
   double arc_d = std::sin(arc_width / 2 * scan_.angle_increment) * scan_horizon_ * 2;
-
   if (arc_d < scan_width_)
   {
     ROS_INFO("Arc too small %f vs. %f, recover", arc_d, scan_width_);
     state_ = State::recover;
+    return;
   }
-  else
-  {
-    // Calculate goal yaw.
-    double goal_yaw = scan_.angle_min + scan_.angle_increment * (arc_start + arc_width / 2);
-    // ROS_INFO("Goal yaw %f", goal_yaw);
 
-    // Calculate target velocity.
-    x_target_v = x_max_v_;
-    r_target_v = 0.0;
-    if (goal_yaw > r_epsilon_)
-      r_target_v = r_max_v_;
-    else if (goal_yaw < -r_epsilon_)
-      r_target_v = -r_max_v_;
-  }
+  // Calculate goal yaw.
+  double goal_yaw = scan_.angle_min + scan_.angle_increment * (arc_start + arc_width / 2);
+  // ROS_INFO("Goal yaw %f", goal_yaw);
+
+  // Calculate target velocity.
+  x_target_v = x_max_v_;
+  r_target_v = 0.0;
+  if (goal_yaw > r_epsilon_)
+    r_target_v = r_max_v_;
+  else if (goal_yaw < -r_epsilon_)
+    r_target_v = -r_max_v_;
 }
 
 void Wander::recoverMotion(int arc_start, int arc_width, double &x_target_v, double &r_target_v)
 {
-  if (arc_width == scan_.ranges.size())
+  // TODO if we've been in recovery too long, go to pause
+  
+  if (arc_width == scan_.ranges.size() && !isClose())
   {
-    ROS_INFO("Full arc, drive");
+    ROS_INFO("Full arc and IR sensors are clear, drive");
     dir_ = Direction::none;
     state_ = State::drive;
+    return;
   }
-  else
-  {
-    // Pick a direction.
-    if (dir_ == Direction::none)
-    {
-      dir_ = (rand() % 2 > 0) ? Direction::cw : Direction::ccw;
-      ROS_INFO("Turning %s", dir_ == Direction::cw ? "clockwise" : "counterclockwise");
-    }
 
-    // Calculate angular velocity. Leave linear velocity at 0.0.
-    r_target_v = (dir_ == Direction::ccw) ? r_max_v_ : -r_max_v_;
+  // Pick a direction.
+  if (dir_ == Direction::none)
+  {
+    dir_ = (rand() % 2 > 0) ? Direction::cw : Direction::ccw;
+    ROS_INFO("Turning %s", dir_ == Direction::cw ? "clockwise" : "counterclockwise");
   }
+
+  // Calculate angular velocity. Leave linear velocity at 0.0.
+  r_target_v = (dir_ == Direction::ccw) ? r_max_v_ : -r_max_v_;
 }
 
 } // namespace rodeobot
