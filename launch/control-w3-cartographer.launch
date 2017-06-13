@@ -1,0 +1,9 @@
+<launch>
+
+  <node name="cartographer_node" pkg="cartographer_ros" type="cartographer_node" 
+      args="-configuration_directory $(find rodeobot)/configuration_files -configuration_basename w3_cartographer.lua"
+      output="screen">
+    <remap from="odom" to="/robot_pose_ekf/odom_combined" />
+  </node>
+
+</launch>
